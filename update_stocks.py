@@ -1,31 +1,57 @@
 #!/usr/bin/env python3
 """
-Script to update stock prices (WTI and IBIT) in Dividends JRS macro.ods
-Fetches today's closing prices and updates the journal tab.
+Script to fetch stock prices (WTI and IBIT) and display them for manual entry.
+Does NOT modify the ODS file - displays values for you to copy/paste.
 """
 
-import pandas as pd
+import json
 import yfinance as yf
 from datetime import datetime
 from pathlib import Path
+import subprocess
 
 
-def get_closing_prices():
-    """Fetch today's closing prices for WTI and IBIT."""
-    print("Fetching stock prices...")
+def load_config():
+    """Load configuration from config.json (or config.local.json if it exists)."""
+    base_dir = Path(__file__).parent
     
-    # WTI is represented by crude oil ETF ticker (using CL=F for crude oil futures)
-    # or USO for the ETF. For simplicity, using USO or checking what WTI means in context
-    # IBIT is BlackRock's Bitcoin ETF
+    # Check for local config first (takes precedence, not tracked in git)
+    local_config_path = base_dir / "config.local.json"
+    config_path = base_dir / "config.json"
     
-    tickers = {
-        'WTI': 'CL=F',  # WTI Crude Oil Futures
-        'IBIT': 'IBIT'   # iShares Bitcoin Trust
-    }
+    if local_config_path.exists():
+        with open(local_config_path, 'r') as f:
+            return json.load(f)
     
+    if not config_path.exists():
+        default_config = {
+            "ods_file_path": str(base_dir / "Dividends JRS macro.ods"),
+            "sheet_name": "Journal",
+            "columns": {
+                "date_column": "A",
+                "wti_column": "AF",
+                "ibit_column": "AG"
+            },
+            "tickers": {
+                "WTI": "CL=F",
+                "IBIT": "IBIT"
+            }
+        }
+        with open(config_path, 'w') as f:
+            json.dump(default_config, f, indent=2)
+        return default_config
+    
+    with open(config_path, 'r') as f:
+        config = json.load(f)
+    
+    return config
+
+
+def get_closing_prices(tickers_config):
+    """Fetch today's closing prices for configured tickers."""
     prices = {}
     
-    for name, ticker in tickers.items():
+    for name, ticker in tickers_config.items():
         try:
             stock = yf.Ticker(ticker)
             hist = stock.history(period='5d')  # Get last 5 days to ensure we have data
@@ -34,9 +60,7 @@ def get_closing_prices():
                 # Get the most recent closing price
                 latest_close = hist['Close'].iloc[-1]
                 prices[name] = round(latest_close, 2)
-                print(f"{name} ({ticker}): ${latest_close:.2f}")
             else:
-                print(f"Warning: No data available for {name} ({ticker})")
                 prices[name] = None
                 
         except Exception as e:
@@ -46,98 +70,54 @@ def get_closing_prices():
     return prices
 
 
-def update_spreadsheet(file_path, prices):
-    """Update the ODS file with today's prices."""
-    print(f"\nOpening spreadsheet: {file_path}")
-    
-    # Read the 'journal' sheet
-    df = pd.read_excel(file_path, sheet_name='journal', engine='odf')
-    
-    # Get today's date (formatted to match the spreadsheet format)
-    today = datetime.now().date()
-    
-    # Convert column A to datetime for comparison (handle various date formats)
-    df.iloc[:, 0] = pd.to_datetime(df.iloc[:, 0], errors='coerce')
-    
-    # Find if today's date exists in column A
-    date_match = df.iloc[:, 0] == pd.Timestamp(today)
-    
-    if date_match.any():
-        # Date exists, find the row index
-        row_idx = date_match.idxmax()
-        print(f"Found date {today} at row {row_idx + 2}")  # +2 for Excel row (1-indexed + header)
-    else:
-        # Date doesn't exist, insert a new row
-        print(f"Date {today} not found. Adding new row...")
-        
-        # Find the last non-empty row in column A
-        last_valid_idx = df.iloc[:, 0].last_valid_index()
-        
-        if last_valid_idx is not None:
-            row_idx = last_valid_idx + 1
-        else:
-            row_idx = 0
-        
-        # Insert new row with today's date
-        new_row = pd.Series([pd.Timestamp(today)] + [None] * (len(df.columns) - 1), 
-                           index=df.columns)
-        df = pd.concat([df.iloc[:row_idx], 
-                       pd.DataFrame([new_row]), 
-                       df.iloc[row_idx:]]).reset_index(drop=True)
-        
-        print(f"Inserted date at row {row_idx + 2}")
-    
-    # Column AF is the 32nd column (0-indexed: 31)
-    # Column AG is the 33rd column (0-indexed: 32)
-    # AF = 31, AG = 32
-    af_col = 31  # WTI
-    ag_col = 32  # IBIT
-    
-    # Ensure the dataframe has enough columns
-    while len(df.columns) <= ag_col:
-        df[f'Unnamed_{len(df.columns)}'] = None
-    
-    # Update the values
-    if prices['WTI'] is not None:
-        df.iloc[row_idx, af_col] = prices['WTI']
-        print(f"Updated WTI (column AF) with ${prices['WTI']:.2f}")
-    
-    if prices['IBIT'] is not None:
-        df.iloc[row_idx, ag_col] = prices['IBIT']
-        print(f"Updated IBIT (column AG) with ${prices['IBIT']:.2f}")
-    
-    # Save back to ODS file
-    print(f"\nSaving changes to {file_path}...")
-    df.to_excel(file_path, sheet_name='journal', engine='odf', index=False)
-    print("Done!")
+def copy_to_clipboard(text):
+    """Copy text to clipboard using xclip."""
+    try:
+        subprocess.run(['xclip', '-selection', 'clipboard'], 
+                      input=text.encode('utf-8'), 
+                      check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
 
 def main():
-    """Main function to orchestrate the stock price update."""
-    # Path to the ODS file
-    file_path = Path(__file__).parent / "Dividends JRS macro.ods"
+    """Main function to fetch and display stock prices."""
+    # Load configuration
+    config = load_config()
     
-    if not file_path.exists():
-        print(f"Error: File not found: {file_path}")
-        return
+    today = datetime.now().date()
+    
+    print(f"Fetching stock prices for {today}...")
     
     # Fetch closing prices
-    prices = get_closing_prices()
+    prices = get_closing_prices(config['tickers'])
     
     # Check if we got any prices
     if all(p is None for p in prices.values()):
-        print("\nError: Could not fetch any stock prices. Aborting.")
+        print("Error: Could not fetch any stock prices.")
         return
     
-    # Update the spreadsheet
-    try:
-        update_spreadsheet(file_path, prices)
-    except Exception as e:
-        print(f"\nError updating spreadsheet: {e}")
-        import traceback
-        traceback.print_exc()
+    # Display prices
+    print("\nPrices:")
+    for name, price in prices.items():
+        if price is not None:
+            print(f"  {name}: ${price:.2f}")
+        else:
+            print(f"  {name}: [NO DATA]")
+    
+    # Create tab-separated values for easy pasting
+    values_only = []
+    if prices.get('WTI') is not None:
+        values_only.append(str(prices['WTI']))
+    if prices.get('IBIT') is not None:
+        values_only.append(str(prices['IBIT']))
+    
+    tab_separated = '\t'.join(values_only)
+    
+    # Copy to clipboard silently
+    copy_to_clipboard(tab_separated)
 
 
 if __name__ == "__main__":
     main()
-

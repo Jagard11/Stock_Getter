@@ -1,0 +1,14 @@
+{
+  "ods_file_path": "/media/jagard/Drive 0/GIT/Stock_Getter/Dividends JRS macro.ods",
+  "sheet_name": "Journal",
+  "columns": {
+    "date_column": "A",
+    "wti_column": "AF",
+    "ibit_column": "AG"
+  },
+  "tickers": {
+    "WTI": "CL=F",
+    "IBIT": "IBIT"
+  }
+}
+
