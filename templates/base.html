@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Inspector{% endblock %} - {{ config.project_title or "Bug Tracker" }}</title>
+    <style>
+        :root {
+            /* Default Dark Theme */
+            --bg-primary: #1a1a1a;
+            --bg-secondary: #2d2d2d;
+            --bg-tertiary: #1a1a1a;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --text-muted: #888;
+            --accent-primary: #4a9eff;
+            --accent-hover: #3a8eef;
+            --border-primary: #3a3a3a;
+            --border-accent: #4a9eff;
+            --link-color: #4a9eff;
+            --success-bg: #388e3c;
+            --warning-bg: #f57c00;
+            --error-bg: #d32f2f;
+            --info-bg: #1976d2;
+            --max-value-bg: #b0c4de;
+            --max-value-text: #000;
+            --base-font-size: 16px;
+            --focus-outline: #4a9eff;
+            --btn-text: #ffffff;
+            --btn-secondary-bg: #555555;
+            --btn-secondary-hover: #666666;
+        }
+
+        /* High Visibility Theme */
+        [data-theme="high-visibility"] {
+            --bg-primary: #000000;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #000000;
+            --text-primary: #FFFFFF;
+            --text-secondary: #FFFFFF;
+            --text-muted: #CCCCCC;
+            --accent-primary: #00FF00;
+            --accent-hover: #00DD00;
+            --border-primary: #FFFFFF;
+            --border-accent: #00FF00;
+            --link-color: #00FF00;
+            --success-bg: #00FF00;
+            --warning-bg: #FFFF00;
+            --error-bg: #FF0000;
+            --info-bg: #00FFFF;
+            --max-value-bg: #FFFF00;
+            --max-value-text: #000000;
+            --base-font-size: 20px;
+            --focus-outline: #00FFFF;
+            --btn-text: #000000;
+            --btn-secondary-bg: #FFFF00;
+            --btn-secondary-hover: #FFCC00;
+        }
+
+        /* Ultra High Contrast Theme */
+        [data-theme="ultra-contrast"] {
+            --bg-primary: #000000;
+            --bg-secondary: #000000;
+            --bg-tertiary: #000000;
+            --text-primary: #FFFFFF;
+            --text-secondary: #FFFFFF;
+            --text-muted: #FFFFFF;
+            --accent-primary: #FFFF00;
+            --accent-hover: #FFFF00;
+            --border-primary: #FFFFFF;
+            --border-accent: #FFFF00;
+            --link-color: #FFFF00;
+            --success-bg: #00FF00;
+            --warning-bg: #FFFF00;
+            --error-bg: #FF0000;
+            --info-bg: #FFFFFF;
+            --max-value-bg: #00FF00;
+            --max-value-text: #000000;
+            --base-font-size: 22px;
+            --focus-outline: #FFFF00;
+            --btn-text: #000000;
+            --btn-secondary-bg: #FFFFFF;
+            --btn-secondary-hover: #CCCCCC;
+        }
+
+        /* Light Theme */
+        [data-theme="light"] {
+            --bg-primary: #FFFFFF;
+            --bg-secondary: #F5F5F5;
+            --bg-tertiary: #FAFAFA;
+            --text-primary: #000000;
+            --text-secondary: #333333;
+            --text-muted: #666666;
+            --accent-primary: #0066CC;
+            --accent-hover: #0052A3;
+            --border-primary: #DDDDDD;
+            --border-accent: #0066CC;
+            --link-color: #0066CC;
+            --success-bg: #2E7D32;
+            --warning-bg: #F57C00;
+            --error-bg: #C62828;
+            --info-bg: #1976D2;
+            --max-value-bg: #FFD700;
+            --max-value-text: #000000;
+            --base-font-size: 16px;
+            --focus-outline: #0066CC;
+            --btn-text: #FFFFFF;
+            --btn-secondary-bg: #757575;
+            --btn-secondary-hover: #616161;
+        }
+
+        /* High Contrast Light Theme */
+        [data-theme="light-high-contrast"] {
+            --bg-primary: #FFFFFF;
+            --bg-secondary: #FFFFFF;
+            --bg-tertiary: #FFFFFF;
+            --text-primary: #000000;
+            --text-secondary: #000000;
+            --text-muted: #000000;
+            --accent-primary: #0000FF;
+            --accent-hover: #0000CC;
+            --border-primary: #000000;
+            --border-accent: #0000FF;
+            --link-color: #0000FF;
+            --success-bg: #00AA00;
+            --warning-bg: #FF8800;
+            --error-bg: #CC0000;
+            --info-bg: #0066FF;
+            --max-value-bg: #FFFF00;
+            --max-value-text: #000000;
+            --base-font-size: 20px;
+            --focus-outline: #0000FF;
+            --btn-text: #FFFFFF;
+            --btn-secondary-bg: #666666;
+            --btn-secondary-hover: #555555;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+            font-size: var(--base-font-size);
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        .container {
+            width: 95%;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        header {
+            background-color: var(--bg-secondary);
+            border-bottom: 2px solid var(--border-accent);
+            padding: 8px 0;
+            margin-bottom: 15px;
+        }
+
+        header .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        header h1 {
+            color: var(--accent-primary);
+            font-size: 1.4em;
+            margin: 0;
+        }
+
+        header p {
+            color: var(--text-secondary);
+            margin-top: 5px;
+        }
+
+        nav {
+            display: flex;
+            gap: 8px;
+        }
+
+        nav a {
+            color: var(--link-color);
+            text-decoration: none;
+            padding: 6px 12px;
+            border-radius: 4px;
+            transition: background-color 0.2s;
+            white-space: nowrap;
+            font-size: 0.95em;
+        }
+
+        nav a:hover {
+            background-color: var(--bg-secondary);
+            outline: 2px solid var(--accent-primary);
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: var(--accent-primary);
+            color: var(--btn-text);
+            text-decoration: none;
+            border-radius: 4px;
+            border: 2px solid var(--accent-primary);
+            cursor: pointer;
+            font-size: 1em;
+            transition: background-color 0.2s, border-color 0.2s;
+            font-weight: 700;
+            text-shadow: none;
+        }
+
+        .btn:hover {
+            background-color: var(--accent-hover);
+            border-color: var(--accent-hover);
+            transform: scale(1.02);
+        }
+
+        .btn:focus {
+            outline: 4px solid var(--focus-outline);
+            outline-offset: 3px;
+        }
+
+        .btn-secondary {
+            background-color: var(--btn-secondary-bg);
+            border-color: var(--btn-secondary-bg);
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--btn-secondary-hover);
+            border-color: var(--btn-secondary-hover);
+        }
+
+        .btn-danger {
+            background-color: var(--error-bg);
+            border-color: var(--error-bg);
+            color: var(--bg-primary);
+        }
+
+        .btn-danger:hover {
+            background-color: var(--error-bg);
+            border-color: var(--error-bg);
+            opacity: 0.9;
+        }
+
+        .card {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            transition: border-color 0.2s;
+        }
+
+        .card:hover {
+            border-color: var(--border-accent);
+        }
+
+        .card h2, .card h3 {
+            color: var(--accent-primary);
+            margin-bottom: 15px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--bg-tertiary);
+            border: 2px solid var(--border-primary);
+            border-radius: 4px;
+            color: var(--text-primary);
+            font-size: 1em;
+        }
+
+        .form-group textarea {
+            min-height: 150px;
+            resize: vertical;
+            font-family: inherit;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: 3px solid var(--focus-outline);
+            outline-offset: 2px;
+            border-color: var(--accent-primary);
+        }
+
+        .form-group input::placeholder,
+        .form-group textarea::placeholder {
+            color: var(--text-muted);
+            opacity: 0.7;
+        }
+
+        .form-group select option {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 14px;
+            border-radius: 12px;
+            font-size: 0.9em;
+            font-weight: 700;
+            margin-right: 8px;
+            border: 2px solid transparent;
+        }
+
+        .badge-active { 
+            background-color: var(--success-bg); 
+            color: var(--btn-text); 
+            border-color: var(--border-accent);
+        }
+        .badge-fixed { 
+            background-color: var(--info-bg); 
+            color: var(--btn-text); 
+        }
+        .badge-wontfix { 
+            background-color: var(--text-muted); 
+            color: var(--bg-primary); 
+        }
+        .badge-duplicate { 
+            background-color: var(--text-muted); 
+            color: var(--bg-primary); 
+        }
+        
+        .badge-critical { 
+            background-color: var(--error-bg); 
+            color: var(--bg-primary); 
+            border-color: var(--warning-bg); 
+            font-size: 1em;
+        }
+        .badge-high { 
+            background-color: var(--warning-bg); 
+            color: var(--btn-text); 
+        }
+        .badge-medium { 
+            background-color: var(--warning-bg); 
+            color: var(--btn-text); 
+        }
+        .badge-low { 
+            background-color: var(--success-bg); 
+            color: var(--btn-text); 
+        }
+
+        .badge-bug { 
+            background-color: var(--error-bg); 
+            color: var(--bg-primary); 
+        }
+        .badge-task { 
+            background-color: var(--info-bg); 
+            color: var(--btn-text); 
+        }
+        .badge-feature { 
+            background-color: var(--accent-primary); 
+            color: var(--btn-text); 
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        table th,
+        table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid var(--border-primary);
+        }
+
+        table th {
+            background-color: var(--bg-secondary);
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+
+        table tr:hover {
+            background-color: var(--bg-secondary);
+            outline: 2px solid var(--accent-primary);
+        }
+
+        table a {
+            color: var(--link-color);
+            text-decoration: none;
+        }
+
+        table a:hover {
+            text-decoration: underline;
+        }
+
+        table a:focus {
+            outline: 3px solid var(--focus-outline);
+            outline-offset: 2px;
+        }
+
+        .meta-info {
+            color: var(--text-muted);
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+
+        .attachment-list {
+            list-style: none;
+            margin-top: 15px;
+        }
+
+        .attachment-list li {
+            padding: 8px;
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: 4px;
+            margin-bottom: 8px;
+        }
+
+        .attachment-list a {
+            color: var(--link-color);
+            text-decoration: none;
+        }
+
+        .attachment-list a:hover {
+            text-decoration: underline;
+        }
+
+        pre {
+            background-color: var(--bg-tertiary);
+            border: 2px solid var(--border-primary);
+            border-radius: 4px;
+            padding: 15px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: var(--text-primary);
+        }
+
+        code {
+            color: var(--accent-primary);
+        }
+
+        .actions {
+            margin-top: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            border: 3px solid var(--border-accent);
+            font-weight: 700;
+        }
+
+        .alert-info {
+            background-color: var(--info-bg);
+            color: var(--btn-text);
+        }
+
+        .alert-success {
+            background-color: var(--success-bg);
+            color: var(--btn-text);
+        }
+
+        .alert-error {
+            background-color: var(--error-bg);
+            color: var(--bg-primary);
+        }
+
+        *:focus-visible {
+            outline: 3px solid var(--focus-outline);
+            outline-offset: 2px;
+        }
+    </style>
+    {% block extra_styles %}{% endblock %}
+    <script>
+        // Apply theme immediately to prevent flash
+        (function() {
+            const theme = '{{ current_theme }}';
+            if (theme && theme !== 'default' && theme !== 'None') {
+                document.documentElement.setAttribute('data-theme', theme);
+            }
+        })();
+    </script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <h1>Stock Tracker</h1>
+                <nav>
+                    <a href="/">Home</a>
+                    <a href="/journal">Journal</a>
+                    <a href="/settings">Settings</a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block extra_scripts %}{% endblock %}
+</body>
+</html>
+

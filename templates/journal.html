@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}Journal{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .journal-table {
+        overflow-x: auto;
+        margin-top: 20px;
+    }
+
+    .journal-table table {
+        min-width: 100%;
+        font-size: 0.9em;
+    }
+
+    .journal-table th {
+        position: sticky;
+        top: 0;
+        background-color: var(--bg-secondary);
+        z-index: 10;
+        white-space: nowrap;
+        padding: 10px 8px;
+        cursor: pointer;
+        user-select: none;
+        transition: background-color 0.2s;
+    }
+
+    .journal-table th:hover {
+        background-color: var(--bg-primary);
+        outline: 2px solid var(--accent-primary);
+    }
+
+    .journal-table th.sortable::after {
+        content: ' ⇅';
+        color: var(--text-muted);
+        font-size: 0.8em;
+    }
+
+    .journal-table th.sort-asc::after {
+        content: ' ▲';
+        color: var(--accent-primary);
+    }
+
+    .journal-table th.sort-desc::after {
+        content: ' ▼';
+        color: var(--accent-primary);
+    }
+
+    .journal-table td {
+        padding: 10px 8px;
+        text-align: right;
+        white-space: nowrap;
+    }
+
+    .journal-table td:first-child {
+        text-align: left;
+        font-weight: 600;
+    }
+
+    .max-value {
+        background-color: var(--max-value-bg) !important;
+        color: var(--max-value-text) !important;
+        font-weight: bold;
+        text-decoration: underline;
+        font-style: italic;
+        border: 2px solid var(--accent-primary) !important;
+    }
+
+    .journal-table tr:hover {
+        background-color: var(--bg-secondary);
+    }
+
+    .card h2 {
+        margin-bottom: 10px;
+    }
+
+    .card p {
+        color: var(--text-secondary);
+        margin-bottom: 5px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+    {% if journal_data %}
+    <div class="journal-table">
+        <table id="portfolio-table">
+            <thead>
+                <tr>
+                    <th class="sortable" data-column="date" data-type="date">Date</th>
+                    {% for col in columns %}
+                    <th class="sortable" data-column="{{ col }}" data-type="number">{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in journal_data %}
+                <tr>
+                    <td data-value="{{ row.Date }}">{{ row.Date }}</td>
+                    {% for col in columns %}
+                    <td data-value="{{ row[col] if row[col] is not none else '' }}" {% if row[col] and row[col] == max_values[col] %}class="max-value"{% endif %}>
+                        {% if row[col] is not none %}
+                        ${{ "%.2f"|format(row[col]) }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 40px; color: var(--text-secondary);">
+        <p style="font-size: 1.2em; margin-bottom: 20px;">No portfolio data yet. Import a CSV file to get started!</p>
+        <p style="font-size: 0.9em;">Your CSV should have a "Date" column and any additional columns for stock tickers or holdings (e.g., AAPL, MSFT, Total, Cash, etc.).</p>
+        <p style="font-size: 0.9em; margin-top: 10px;">The system will automatically detect and display all columns from your CSV.</p>
+        <a href="/settings" class="btn" style="margin-top: 20px;">Go to Settings to Import Data</a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.getElementById('portfolio-table');
+    if (!table) return;
+
+    const headers = table.querySelectorAll('th.sortable');
+    let currentSort = { column: null, direction: 'asc' };
+
+    headers.forEach(header => {
+        header.addEventListener('click', function() {
+            const column = this.dataset.column;
+            const type = this.dataset.type;
+            
+            // Determine sort direction
+            if (currentSort.column === column) {
+                currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.direction = 'asc';
+            }
+            currentSort.column = column;
+
+            // Remove sort classes from all headers
+            headers.forEach(h => {
+                h.classList.remove('sort-asc', 'sort-desc');
+            });
+
+            // Add sort class to current header
+            this.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+
+            // Sort the table
+            sortTable(column, type, currentSort.direction);
+        });
+    });
+
+    function sortTable(column, type, direction) {
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+
+        rows.sort((a, b) => {
+            let aValue, bValue;
+
+            if (column === 'date') {
+                aValue = a.cells[0].dataset.value;
+                bValue = b.cells[0].dataset.value;
+                
+                // Sort dates as strings (YYYY-MM-DD format works naturally)
+                return direction === 'asc' 
+                    ? aValue.localeCompare(bValue)
+                    : bValue.localeCompare(aValue);
+            } else {
+                // Find the column index
+                const headerCells = Array.from(table.querySelectorAll('th'));
+                const colIndex = headerCells.findIndex(h => h.dataset.column === column);
+                
+                aValue = parseFloat(a.cells[colIndex].dataset.value) || 0;
+                bValue = parseFloat(b.cells[colIndex].dataset.value) || 0;
+
+                // Handle empty values (represented as empty string)
+                const aEmpty = a.cells[colIndex].dataset.value === '';
+                const bEmpty = b.cells[colIndex].dataset.value === '';
+
+                if (aEmpty && bEmpty) return 0;
+                if (aEmpty) return 1; // Empty values go to bottom
+                if (bEmpty) return -1;
+
+                return direction === 'asc' 
+                    ? aValue - bValue
+                    : bValue - aValue;
+            }
+        });
+
+        // Clear and re-append sorted rows
+        tbody.innerHTML = '';
+        rows.forEach(row => tbody.appendChild(row));
+    }
+});
+</script>
+{% endblock %}
+
