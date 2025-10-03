@@ -483,6 +483,189 @@ class Database:
             return 0
         finally:
             conn.close()
+    
+    def update_portfolio_value(self, date: str, symbol: str, value: Optional[float]) -> bool:
+        """Update a single portfolio value for a specific date and symbol.
+        
+        Args:
+            date: The date string (e.g., "Wed 2025-10-01")
+            symbol: The stock symbol/column name
+            value: The new value (or None to clear)
+        
+        Returns:
+            True if successful
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Get the date_id for this date
+            cursor.execute("SELECT id FROM portfolio_dates WHERE date = ?", (date,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return False
+            
+            date_id = row[0]
+            
+            if value is None:
+                # Delete the holding if value is None
+                cursor.execute("""
+                    DELETE FROM portfolio_holdings
+                    WHERE date_id = ? AND symbol = ?
+                """, (date_id, symbol))
+            else:
+                # Update or insert the value
+                cursor.execute("""
+                    INSERT INTO portfolio_holdings (date_id, symbol, value, column_order)
+                    VALUES (?, ?, ?, (SELECT column_order FROM portfolio_holdings WHERE symbol = ? LIMIT 1))
+                    ON CONFLICT(date_id, symbol) 
+                    DO UPDATE SET value = ?
+                """, (date_id, symbol, value, symbol, value))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating portfolio value: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
+    def import_stock_holdings_csv(self, csv_data: List[List[str]]) -> Dict[str, Any]:
+        """Import stock holdings from CSV with account-based structure.
+        
+        This method handles CSV files with the following structure:
+        - Multiple sections separated by empty rows
+        - First section contains holdings data with columns:
+          Account Number, Investment Name, Symbol, Shares, Share Price, Total Value
+        - Second instance of "Account Number" marks the end of holdings data
+        - Multiple accounts may hold the same stock symbol
+        
+        Args:
+            csv_data: List of rows, where each row is a list of cell values
+        
+        Returns:
+            Dictionary with 'symbols_imported' (count) and 'symbols' (list of symbols)
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Find the second instance of "Account Number" in column A (index 0)
+            account_number_count = 0
+            holdings_end_index = len(csv_data)
+            
+            for idx, row in enumerate(csv_data):
+                if row and len(row) > 0 and row[0] and 'Account Number' in str(row[0]):
+                    account_number_count += 1
+                    if account_number_count == 2:
+                        holdings_end_index = idx
+                        break
+            
+            # Extract holdings from top section only
+            # Find the first instance (header row)
+            header_index = -1
+            for idx, row in enumerate(csv_data[:holdings_end_index]):
+                if row and len(row) > 0 and row[0] and 'Account Number' in str(row[0]):
+                    header_index = idx
+                    break
+            
+            if header_index == -1:
+                return {'symbols_imported': 0, 'symbols': [], 'error': 'Could not find header row'}
+            
+            # Parse holdings data (rows after header, before second "Account Number")
+            holdings_dict = {}  # symbol -> share_price
+            
+            for row in csv_data[header_index + 1:holdings_end_index]:
+                # Skip empty rows
+                if not row or len(row) < 6:
+                    continue
+                
+                # Skip if first column is empty or contains "Account Number"
+                if not row[0] or 'Account Number' in str(row[0]):
+                    continue
+                
+                # Extract data
+                account_number = str(row[0]).strip()
+                investment_name = str(row[1]).strip() if len(row) > 1 else ""
+                symbol = str(row[2]).strip() if len(row) > 2 else ""
+                share_price_str = str(row[4]).strip() if len(row) > 4 else ""
+                
+                # Skip rows without valid symbol or share price
+                if not symbol or symbol.lower() == 'null' or not share_price_str:
+                    continue
+                
+                # Parse share price
+                try:
+                    share_price = float(share_price_str.replace('$', '').replace(',', ''))
+                except (ValueError, AttributeError):
+                    continue
+                
+                # Store the first occurrence of each symbol (they should all have the same share price)
+                if symbol not in holdings_dict:
+                    holdings_dict[symbol] = share_price
+            
+            # Get today's date in the required format
+            today = datetime.now()
+            date_str = today.strftime("%a %Y-%m-%d")
+            
+            # Insert or get date record
+            cursor.execute("""
+                INSERT OR IGNORE INTO portfolio_dates (date, imported_at)
+                VALUES (?, ?)
+            """, (date_str, datetime.now().isoformat()))
+            
+            cursor.execute("SELECT id FROM portfolio_dates WHERE date = ?", (date_str,))
+            date_id = cursor.fetchone()[0]
+            
+            # Get existing symbols to preserve column order
+            cursor.execute("""
+                SELECT DISTINCT symbol, MIN(column_order) as min_order
+                FROM portfolio_holdings 
+                WHERE column_order IS NOT NULL
+                GROUP BY symbol
+                ORDER BY min_order
+            """)
+            existing_symbols = [row[0] for row in cursor.fetchall()]
+            
+            # Determine column order for new symbols
+            next_order = len(existing_symbols)
+            
+            # Insert/update holdings for today
+            symbols_imported = []
+            for symbol, share_price in holdings_dict.items():
+                # Determine column order
+                if symbol in existing_symbols:
+                    column_order = existing_symbols.index(symbol)
+                else:
+                    column_order = next_order
+                    next_order += 1
+                
+                # Insert or update the holding
+                cursor.execute("""
+                    INSERT INTO portfolio_holdings (date_id, symbol, value, column_order)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(date_id, symbol) 
+                    DO UPDATE SET value = ?, column_order = ?
+                """, (date_id, symbol, share_price, column_order, share_price, column_order))
+                
+                symbols_imported.append(symbol)
+            
+            conn.commit()
+            return {
+                'symbols_imported': len(symbols_imported),
+                'symbols': symbols_imported,
+                'date': date_str
+            }
+        except Exception as e:
+            print(f"Error importing stock holdings CSV: {e}")
+            import traceback
+            traceback.print_exc()
+            conn.rollback()
+            return {'symbols_imported': 0, 'symbols': [], 'error': str(e)}
+        finally:
+            conn.close()
 
 
 def load_config() -> Dict[str, Any]:

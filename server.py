@@ -381,6 +381,34 @@ async def import_journal_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Error importing CSV: {str(e)}")
 
 
+@app.post("/journal/import-holdings")
+async def import_holdings_csv(file: UploadFile = File(...)):
+    """Import stock holdings from account-based CSV file."""
+    try:
+        # Read CSV file
+        contents = await file.read()
+        csv_text = contents.decode('utf-8')
+        
+        # Parse CSV as list of lists (not DictReader)
+        csv_reader = csv.reader(io.StringIO(csv_text))
+        csv_data = list(csv_reader)
+        
+        # Import into database
+        result = db.import_stock_holdings_csv(csv_data)
+        
+        if 'error' in result:
+            raise HTTPException(status_code=400, detail=result['error'])
+        
+        return RedirectResponse(
+            url=f"/settings?holdings_imported={result['symbols_imported']}&date={result['date']}",
+            status_code=303
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error importing holdings CSV: {str(e)}")
+
+
 @app.post("/journal/reorder-columns")
 async def reorder_columns(column_order: str = Form(...)):
     """Update the column order for portfolio display."""
@@ -400,6 +428,30 @@ async def reorder_columns(column_order: str = Form(...)):
             raise HTTPException(status_code=500, detail="Failed to update column order")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error reordering columns: {str(e)}")
+
+
+@app.post("/journal/update-cell")
+async def update_cell(
+    date: str = Form(...),
+    symbol: str = Form(...),
+    value: str = Form(...)
+):
+    """Update a single cell value in the portfolio."""
+    try:
+        # Convert value to float
+        float_value = float(value.replace('$', '').replace(',', '').strip()) if value.strip() else None
+        
+        # Update in database
+        success = db.update_portfolio_value(date, symbol, float_value)
+        
+        if success:
+            return {"success": True, "value": float_value}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update cell value")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid number format")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error updating cell: {str(e)}")
 
 
 if __name__ == "__main__":

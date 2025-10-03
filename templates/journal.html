@@ -116,6 +116,10 @@
         cursor: pointer;
         transition: background-color 0.2s;
     }
+    
+    .journal-table td:not(:first-child) {
+        cursor: cell;
+    }
 
     .journal-table td:hover:not(:first-child) {
         background-color: var(--bg-tertiary);
@@ -141,7 +145,9 @@
         padding: 30px 40px;
         z-index: 1000;
         box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
-        min-width: 300px;
+        width: 450px;
+        max-width: 90vw;
+        min-height: 280px;
     }
 
     .value-popup-overlay {
@@ -164,13 +170,90 @@
         font-size: 2em;
         color: var(--text-primary);
         font-weight: 700;
-        margin: 20px 0;
+        margin: 20px 0 0 0;
         text-align: center;
+    }
+    .value-popup .edit-hint {
+        color: var(--text-muted);
+        font-size: 0.85em;
+        text-align: center;
+        margin: 5px 0 15px 0;
+        font-style: italic;
+        min-height: 20px;
     }
 
     .value-popup .close-btn {
         margin-top: 20px;
         width: 100%;
+    }
+
+    .value-popup .exact-value {
+        cursor: cell;
+    }
+
+    .value-popup .exact-value:hover {
+        background-color: var(--bg-tertiary);
+        outline: 1px solid var(--accent-primary);
+    }
+
+    .value-popup .edit-input {
+        font-size: 2em;
+        color: var(--text-primary);
+        font-weight: 700;
+        margin: 20px 0;
+        text-align: center;
+        padding: 10px;
+        width: 100%;
+        background-color: var(--bg-tertiary);
+        border: 2px solid var(--accent-primary);
+        border-radius: 4px;
+        outline: none;
+    }
+
+    .value-popup .button-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 40px;
+    }
+
+    .value-popup .save-btn {
+        flex: 1;
+        background-color: var(--accent-primary);
+        color: var(--btn-text);
+        border: 2px solid var(--accent-primary);
+        padding: 12px 24px;
+        border-radius: 4px;
+        font-size: 1em;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .value-popup .save-btn:hover {
+        background-color: var(--accent-hover);
+        border-color: var(--accent-hover);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .value-popup .cancel-btn {
+        flex: 1;
+        background-color: var(--bg-tertiary);
+        color: var(--text-primary);
+        border: 2px solid var(--border-primary);
+        padding: 12px 24px;
+        border-radius: 4px;
+        font-size: 1em;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .value-popup .cancel-btn:hover {
+        background-color: var(--bg-secondary);
+        border-color: var(--text-muted);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
 
     .max-value {
@@ -268,6 +351,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add click handlers to data cells to show exact value
     setupCellClickHandlers();
+    
+    // Add double-click handlers for editing cells
 
     headers.forEach(header => {
         header.addEventListener('click', function() {
@@ -432,29 +517,111 @@ document.addEventListener('DOMContentLoaded', function() {
         const popup = document.createElement('div');
         popup.className = 'value-popup';
         
-        console.log('Raw value from data-value:', value);
+        let isEditing = false;
         const floatValue = parseFloat(value);
-        console.log('Parsed float value:', floatValue);
-        
-        // Format with exactly 2 decimal places
         const formattedValue = floatValue.toLocaleString('en-US', { 
             minimumFractionDigits: 2, 
             maximumFractionDigits: 2 
         });
-        console.log('Formatted value:', formattedValue);
         
         popup.innerHTML = `
             <h3 style="text-align: center;">${column}</h3>
             <p style="color: var(--text-secondary); margin: 0; text-align: center;">${date}</p>
-            <div class="exact-value" style="text-align: center;">$${formattedValue}</div>
-            <button class="btn close-btn">Close</button>
+            <div class="exact-value" id="value-display" style="text-align: center;">$${formattedValue}</div>
+            <p class="edit-hint">Double-click value to edit</p>
+            <button class="btn close-btn" id="close-btn">Close</button>
         `;
         
         document.body.appendChild(overlay);
         document.body.appendChild(popup);
         
-        // Close handlers
-        const closeBtn = popup.querySelector('.close-btn');
+        const valueDisplay = popup.querySelector('#value-display');
+        const closeBtn = popup.querySelector('#close-btn');
+        const editHint = popup.querySelector('.edit-hint');
+        
+        // Double-click to edit
+        valueDisplay.addEventListener('dblclick', function() {
+            if (isEditing) return;
+            isEditing = true;
+            
+            // Create input field
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = value;
+            input.className = 'edit-input';
+            
+            // Replace display with input
+            valueDisplay.replaceWith(input);
+            input.focus();
+            input.select();
+            
+            // Hide edit hint
+            if (editHint) editHint.style.display = 'none';
+            
+            // Change close button to save/cancel buttons
+            const buttonGroup = document.createElement('div');
+            buttonGroup.className = 'button-group';
+            buttonGroup.innerHTML = `
+                <button class="save-btn" id="save-btn">Save</button>
+                <button class="cancel-btn" id="cancel-btn">Cancel</button>
+            `;
+            closeBtn.replaceWith(buttonGroup);
+            
+            const saveBtn = buttonGroup.querySelector('#save-btn');
+            const cancelBtn = buttonGroup.querySelector('#cancel-btn');
+            
+            const saveEdit = async () => {
+                const newValue = input.value.trim();
+                
+                try {
+                    const formData = new FormData();
+                    formData.append('date', date);
+                    formData.append('symbol', column);
+                    formData.append('value', newValue);
+                    
+                    const response = await fetch('/journal/update-cell', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to update cell');
+                    }
+                    
+                    // Reload page to show updated values
+                    window.location.reload();
+                    
+                } catch (error) {
+                    console.error('Error saving cell:', error);
+                    alert('Failed to save cell value. Please try again.');
+                    isEditing = false;
+                    input.replaceWith(valueDisplay);
+                    buttonGroup.replaceWith(closeBtn);
+                }
+            };
+            
+            const cancelEdit = () => {
+                isEditing = false;
+                input.replaceWith(valueDisplay);
+                buttonGroup.replaceWith(closeBtn);
+                if (editHint) editHint.style.display = '';
+            };
+            
+            // Event listeners
+            saveBtn.addEventListener('click', saveEdit);
+            cancelBtn.addEventListener('click', cancelEdit);
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveEdit();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelEdit();
+                }
+            });
+        });
+        
         const closePopup = () => {
             overlay.remove();
             popup.remove();
@@ -463,15 +630,16 @@ document.addEventListener('DOMContentLoaded', function() {
         closeBtn.addEventListener('click', closePopup);
         overlay.addEventListener('click', closePopup);
         
-        // Close on Escape key
+        // Close on Escape key (only when not editing)
         const escapeHandler = (e) => {
-            if (e.key === 'Escape') {
+            if (e.key === 'Escape' && !isEditing) {
                 closePopup();
                 document.removeEventListener('keydown', escapeHandler);
             }
         };
         document.addEventListener('keydown', escapeHandler);
     }
+
 
     let draggedElement = null;
 
