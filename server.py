@@ -570,6 +570,36 @@ async def fetch_price(
         raise HTTPException(status_code=500, detail=f"Error fetching price: {str(e)}")
 
 
+@app.post("/journal/add-symbol")
+async def add_symbol(symbol: str = Form(...)):
+    """Add a new symbol column to the portfolio."""
+    try:
+        # Validate symbol name
+        symbol = symbol.strip().upper()
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol cannot be empty")
+        
+        # Check if symbol already exists
+        _, existing_symbols = db.get_portfolio_data()
+        if symbol in existing_symbols:
+            raise HTTPException(status_code=400, detail=f"Symbol '{symbol}' already exists")
+        
+        # Add symbol to database with appropriate column order
+        success = db.add_new_symbol(symbol)
+        
+        if success:
+            return RedirectResponse(
+                url="/journal?symbol_added=1",
+                status_code=303
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to add symbol")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error adding symbol: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
