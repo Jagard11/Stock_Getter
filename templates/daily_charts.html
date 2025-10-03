@@ -148,6 +148,32 @@
             </div>
         </div>
         {% endfor %}
+        {% if ath_stats and not ath_stats.error %}
+        <div class="chart-wrapper" style="margin-top: 50px;">
+            <div class="chart-header">
+                <h3 style="font-size: 1.8em;">Portfolio All-Time High Statistics</h3>
+            </div>
+            <table style="width: 100%; max-width: 800px; margin: 20px auto; font-size: 1.2em;">
+                <thead>
+                    <tr>
+                        <th style="text-align: center; padding: 15px;">Max</th>
+                        <th style="text-align: center; padding: 15px;">Current</th>
+                        <th style="text-align: center; padding: 15px;">Difference</th>
+                        <th style="text-align: center; padding: 15px;">Percent Diff</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: var(--accent-primary);">${{ "{:,.0f}".format(ath_stats.max) }}</td>
+                        <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: var(--text-primary);">${{ "{:,.0f}".format(ath_stats.current) }}</td>
+                        <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: {% if ath_stats.difference >= 0 %}var(--success-bg){% else %}var(--error-bg){% endif %};">${{ "{:,.0f}".format(ath_stats.difference) }}</td>
+                        <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: {% if ath_stats.percent_diff >= 100 %}var(--success-bg){% else %}var(--warning-bg){% endif %};">{{ "{:.2f}".format(ath_stats.percent_diff) }}%</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
     {% else %}
         <div class="no-data-message">
             <h3>No Chart Data Available</h3>

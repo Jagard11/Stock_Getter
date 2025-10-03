@@ -344,12 +344,16 @@ async def daily_charts(request: Request):
     # Get chart data from database
     chart_data = db.get_chart_data()
     
+    # Get all-time high statistics
+    ath_stats = db.get_all_time_high_stats()
+    
     return templates.TemplateResponse(
         "daily_charts.html",
         {
             "request": request,
             "config": config,
             "chart_data": chart_data,
+            "ath_stats": ath_stats,
             "current_theme": current_theme
         }
     )

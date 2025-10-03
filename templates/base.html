@@ -498,6 +498,54 @@
         *:focus-visible {
             outline: 3px solid var(--focus-outline);
             outline-offset: 2px;
+        /* Windows High Contrast Mode support */
+        @media (forced-colors: active) {
+            /* Ensure all interactive elements have visible borders */
+            button, .btn, input, select, textarea, a {
+                border: 2px solid ButtonText !important;
+            }
+            
+            /* Ensure focus indicators are always visible */
+            *:focus, *:focus-visible {
+                outline: 3px solid Highlight !important;
+                outline-offset: 2px !important;
+            }
+            
+            /* Ensure text is visible */
+            body, .card, table, .badge {
+                color: WindowText !important;
+                background-color: Window !important;
+                forced-color-adjust: auto;
+            }
+            
+            /* Buttons must be distinguishable */
+            button, .btn {
+                color: ButtonText !important;
+                background-color: ButtonFace !important;
+                border-color: ButtonBorder !important;
+            }
+            
+            button:hover, .btn:hover {
+                border-color: Highlight !important;
+            }
+            
+            /* Links must be distinguishable */
+            a {
+                color: LinkText !important;
+            }
+            
+            /* Table borders */
+            table th, table td {
+                border: 1px solid WindowText !important;
+            }
+            
+            /* Header visibility */
+            header {
+                background-color: Canvas !important;
+                border-color: WindowText !important;
+            }
+        }
+
         }
     </style>
     {% block extra_styles %}{% endblock %}
