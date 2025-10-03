@@ -810,6 +810,128 @@ class Database:
             
         finally:
             conn.close()
+    
+    def add_new_symbol(self, symbol: str) -> bool:
+        """Add a new symbol to the portfolio.
+        
+        Args:
+            symbol: The stock symbol to add
+        
+        Returns:
+            True if successful
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Get the highest column_order value
+            cursor.execute("""
+                SELECT MAX(column_order) as max_order
+                FROM portfolio_holdings
+            """)
+            row = cursor.fetchone()
+            next_order = (row[0] + 1) if row[0] is not None else 0
+            
+            # Get all existing dates
+            cursor.execute("SELECT id FROM portfolio_dates")
+            date_ids = [row[0] for row in cursor.fetchall()]
+            
+            # Add the symbol with NULL value for all existing dates
+            # This ensures it shows up in the table but with no values
+            for date_id in date_ids:
+                cursor.execute("""
+                    INSERT INTO portfolio_holdings (date_id, symbol, value, column_order)
+                    VALUES (?, ?, NULL, ?)
+                """, (date_id, symbol, next_order))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error adding new symbol: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
+    def get_all_time_high_stats(self) -> Dict[str, Any]:
+        """Get all-time high statistics for the Total column.
+        
+        Returns:
+            Dictionary with max, current, difference, and percent_diff
+        """
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        try:
+            # Check if 'Total' symbol exists
+            cursor.execute("""
+                SELECT COUNT(*) as count
+                FROM portfolio_holdings
+                WHERE symbol = 'Total'
+            """)
+            if cursor.fetchone()['count'] == 0:
+                return {
+                    'max': 0,
+                    'current': 0,
+                    'difference': 0,
+                    'percent_diff': 0,
+                    'error': 'Total column not found'
+                }
+            
+            # Get maximum value from Total column
+            cursor.execute("""
+                SELECT MAX(value) as max_value
+                FROM portfolio_holdings
+                WHERE symbol = 'Total' AND value IS NOT NULL
+            """)
+            max_row = cursor.fetchone()
+            max_value = max_row['max_value'] if max_row and max_row['max_value'] else 0
+            
+            # Get most recent date
+            cursor.execute("""
+                SELECT id, date
+                FROM portfolio_dates
+                ORDER BY substr(date, instr(date, ' ') + 1) DESC
+                LIMIT 1
+            """)
+            latest_date_row = cursor.fetchone()
+            
+            if not latest_date_row:
+                return {
+                    'max': max_value,
+                    'current': 0,
+                    'difference': 0,
+                    'percent_diff': 0,
+                    'error': 'No dates found'
+                }
+            
+            latest_date_id = latest_date_row['id']
+            
+            # Get current value (most recent Total value)
+            cursor.execute("""
+                SELECT value
+                FROM portfolio_holdings
+                WHERE date_id = ? AND symbol = 'Total'
+            """, (latest_date_id,))
+            current_row = cursor.fetchone()
+            current_value = current_row['value'] if current_row and current_row['value'] else 0
+            
+            # Calculate difference and percent difference
+            difference = current_value - max_value
+            percent_diff = 0
+            if max_value > 0:
+                percent_diff = (1 - (max_value - current_value) / max_value) * 100
+            
+            return {
+                'max': float(max_value),
+                'current': float(current_value),
+                'difference': float(difference),
+                'percent_diff': float(percent_diff)
+            }
+            
+        finally:
+            conn.close()
 
 
 def load_config() -> Dict[str, Any]:

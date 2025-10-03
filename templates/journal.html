@@ -357,13 +357,24 @@
     <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Column order updated successfully!</p>
 </div>
 {% endif %}
+{% if request.query_params.get('symbol_added') %}
+<div class="alert alert-success">
+    <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Symbol added successfully!</p>
+</div>
+{% endif %}
+
 
 <div class="card journal-page-card">
     {% if journal_data %}
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 20px;">
-        <h2 style="margin: 0;">Portfolio Journal</h2>
+                <h2 style="margin: 0;">Portfolio Journal</h2>
+        <div style="display: flex; gap: 10px;">
+            <button id="add-symbol-btn" class="btn">
+                ➕ Add Symbol
+            </button>
         <button id="reorder-btn" class="btn btn-secondary">
             ⇅ Reorder Columns
+        </div>
         </button>
     </div>
     
@@ -422,6 +433,26 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add click handlers to data cells to show exact value
     setupCellClickHandlers();
+    // Add Symbol button handler
+    const addSymbolBtn = document.getElementById('add-symbol-btn');
+    if (addSymbolBtn) {
+        addSymbolBtn.addEventListener('click', function() {
+            const symbolName = prompt('Enter the stock symbol to add (e.g., AAPL, MSFT):');
+            if (symbolName) {
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = '/journal/add-symbol';
+                const input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'symbol';
+                input.value = symbolName.trim().toUpperCase();
+                form.appendChild(input);
+                document.body.appendChild(form);
+                form.submit();
+            }
+        });
+    }
+
     
     // Add double-click handlers for editing cells
 
