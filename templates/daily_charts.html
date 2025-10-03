@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+
+{% block title %}Daily Charts{% endblock %}
+
+{% block extra_styles %}
+<style>
+    /* Make charts page full-width */
+    .charts-container {
+        width: 99vw;
+        max-width: 99vw;
+        margin-left: calc(-50vw + 50%);
+        padding-left: 0.5vw;
+        padding-right: 0.5vw;
+    }
+
+    .chart-wrapper {
+        background-color: var(--bg-secondary);
+        border: 3px solid var(--border-primary);
+        border-radius: 8px;
+        padding: 40px;
+        margin-bottom: 50px;
+        transition: border-color 0.2s;
+    }
+
+    .chart-wrapper:hover {
+        border-color: var(--accent-primary);
+    }
+
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 30px;
+    }
+
+    .chart-header h3 {
+        color: var(--accent-primary);
+        font-size: 2em;
+        margin: 0;
+        font-weight: 700;
+    }
+
+    .chart-info {
+        color: var(--text-secondary);
+        font-size: 1.2em;
+        font-weight: 600;
+    }
+
+    .chart-info span {
+        margin-left: 30px;
+    }
+
+    .chart-canvas-container {
+        position: relative;
+        height: 500px;
+        width: 100%;
+        background-color: var(--bg-tertiary);
+        border-radius: 4px;
+        padding: 20px;
+        border: 2px solid var(--border-primary);
+    }
+
+    canvas {
+        max-height: 100%;
+    }
+
+    .no-data-message {
+        text-align: center;
+        padding: 80px 20px;
+        color: var(--text-secondary);
+    }
+
+    .no-data-message h3 {
+        color: var(--accent-primary);
+        font-size: 2em;
+        margin-bottom: 20px;
+        font-weight: 700;
+    }
+
+    .no-data-message p {
+        font-size: 1.3em;
+        margin-bottom: 15px;
+    }
+
+    /* Ultra contrast mode - even bigger */
+    [data-theme="ultra-contrast"] .chart-header h3 {
+        font-size: 2.4em;
+    }
+
+    [data-theme="ultra-contrast"] .chart-info {
+        font-size: 1.4em;
+    }
+
+    [data-theme="ultra-contrast"] .chart-canvas-container {
+        height: 600px;
+        padding: 25px;
+        border: 4px solid var(--border-primary);
+    }
+
+    [data-theme="ultra-contrast"] .chart-wrapper {
+        padding: 50px;
+        border: 4px solid var(--border-primary);
+    }
+
+    [data-theme="ultra-contrast"] .no-data-message h3 {
+        font-size: 2.6em;
+    }
+
+    [data-theme="ultra-contrast"] .no-data-message p {
+        font-size: 1.6em;
+    }
+
+    /* High visibility mode - also bigger */
+    [data-theme="high-visibility"] .chart-header h3 {
+        font-size: 2.2em;
+    }
+
+    [data-theme="high-visibility"] .chart-info {
+        font-size: 1.3em;
+    }
+
+    [data-theme="high-visibility"] .chart-canvas-container {
+        height: 550px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="card charts-container">
+    <h2 style="margin-bottom: 30px; font-size: 2.2em; font-weight: 700;">Daily Stock Charts</h2>
+    
+    {% if chart_data %}
+        {% for symbol, data in chart_data.items() %}
+        <div class="chart-wrapper">
+            <div class="chart-header">
+                <h3>{{ symbol }}</h3>
+                <div class="chart-info">
+                    <span>Data points: {{ data|length }}</span>
+                    {% if data %}
+                    <span style="margin-left: 20px;">
+                        {{ data[0].date }} to {{ data[-1].date }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="chart-canvas-container">
+                <canvas id="chart-{{ symbol|replace('.', '-')|replace(' ', '-') }}"></canvas>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="no-data-message">
+            <h3>No Chart Data Available</h3>
+            <p>No stock symbols are currently tracked in your portfolio.</p>
+            <p style="font-size: 0.9em; margin-top: 20px;">
+                Import portfolio data from the <a href="/settings" class="btn" style="padding: 8px 16px; font-size: 0.9em;">Settings</a> page to view charts.
+            </p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<!-- Chart.js library -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Get theme colors from CSS variables
+    const styles = getComputedStyle(document.documentElement);
+    const primaryColor = styles.getPropertyValue('--accent-primary').trim();
+    const textColor = styles.getPropertyValue('--text-primary').trim();
+    const gridColor = styles.getPropertyValue('--border-primary').trim();
+    const bgColor = styles.getPropertyValue('--bg-tertiary').trim();
+    
+    // Chart data from server
+    const chartData = {{ chart_data|tojson|safe }};
+    
+    // Calculate 50-day moving average
+    function calculateMovingAverage(data, period) {
+        const result = [];
+        for (let i = 0; i < data.length; i++) {
+            if (i < period - 1) {
+                result.push(null);
+            } else {
+                let sum = 0;
+                for (let j = 0; j < period; j++) {
+                    sum += data[i - j].value;
+                }
+                result.push(sum / period);
+            }
+        }
+        return result;
+    }
+    
+    // Create charts for each symbol
+    Object.keys(chartData).forEach(symbol => {
+        const data = chartData[symbol];
+        const canvasId = 'chart-' + symbol.replace(/\./g, '-').replace(/\s/g, '-');
+        const canvas = document.getElementById(canvasId);
+        
+        if (!canvas) {
+            console.error('Canvas not found for symbol:', symbol);
+            return;
+        }
+        
+        const ctx = canvas.getContext('2d');
+        
+        // Extract dates and values
+        const dates = data.map(d => d.date);
+        const values = data.map(d => d.value);
+        
+        // Calculate 50-day moving average
+        const movingAvg = calculateMovingAverage(data, 50);
+        
+        // Create chart
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: [
+                    {
+                        label: symbol + ' Price',
+                        data: values,
+                        borderColor: primaryColor,
+                        backgroundColor: primaryColor + '20',
+                        borderWidth: 3,
+                        pointRadius: 4,
+                        pointHoverRadius: 8,
+                        pointBackgroundColor: primaryColor,
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        tension: 0.1,
+                        fill: false
+                    },
+                    {
+                        label: '50-Day MA',
+                        data: movingAvg,
+                        borderColor: '#ff9800',
+                        backgroundColor: 'transparent',
+                        borderWidth: 3,
+                        pointRadius: 0,
+                        pointHoverRadius: 6,
+                        borderDash: [8, 8],
+                        tension: 0.1,
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: {
+                    mode: 'index',
+                    intersect: false,
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: textColor,
+                            font: {
+                                size: 16,
+                                weight: '700'
+                            },
+                            padding: 20,
+                            usePointStyle: true,
+                            pointStyleWidth: 20
+                        }
+                    },
+                    tooltip: {
+                        enabled: true,
+                        backgroundColor: bgColor,
+                        titleColor: primaryColor,
+                        bodyColor: textColor,
+                        borderColor: primaryColor,
+                        borderWidth: 3,
+                        padding: 16,
+                        displayColors: true,
+                        titleFont: {
+                            size: 16,
+                            weight: '700'
+                        },
+                        bodyFont: {
+                            size: 15,
+                            weight: '600'
+                        },
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += '$' + context.parsed.y.toLocaleString('en-US', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    });
+                                }
+                                return label;
+                            }
+                        }
+                    },
+                    zoom: {
+                        limits: {
+                            x: {min: 'original', max: 'original', minRange: 2},
+                            y: {min: 'original', max: 'original', minRange: 2}
+                        },
+                        zoom: {
+                            wheel: {
+                                enabled: true,
+                                speed: 0.1,
+                            },
+                            pinch: {
+                                enabled: true
+                            },
+                            drag: {
+                                enabled: true,
+                                modifierKey: 'shift',
+                            },
+                            mode: 'xy',
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        type: 'category',
+                        title: {
+                            display: true,
+                            text: 'Date',
+                            color: textColor,
+                            font: {
+                                size: 18,
+                                weight: '700'
+                            }
+                        },
+                        ticks: {
+                            color: textColor,
+                            maxRotation: 45,
+                            minRotation: 45,
+                            autoSkip: true,
+                            maxTicksLimit: 20,
+                            font: {
+                                size: 14,
+                                weight: '600'
+                            }
+                        },
+                        grid: {
+                            color: gridColor,
+                            drawBorder: true,
+                            borderColor: gridColor,
+                            lineWidth: 2
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Price ($)',
+                            color: textColor,
+                            font: {
+                                size: 18,
+                                weight: '700'
+                            }
+                        },
+                        ticks: {
+                            color: textColor,
+                            font: {
+                                size: 14,
+                                weight: '600'
+                            },
+                            callback: function(value) {
+                                return '$' + value.toLocaleString('en-US', {
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                });
+                            }
+                        },
+                        grid: {
+                            color: gridColor,
+                            drawBorder: true,
+                            borderColor: gridColor,
+                            lineWidth: 2
+                        },
+                        beginAtZero: false
+                    }
+                }
+            }
+        });
+        
+        // Add double-click to reset zoom
+        canvas.addEventListener('dblclick', function() {
+            chart.resetZoom();
+        });
+    });
+    
+    // Add zoom instructions
+    if (Object.keys(chartData).length > 0) {
+        const container = document.querySelector('.charts-container');
+        const instructions = document.createElement('div');
+        instructions.className = 'alert-info';
+        instructions.style.marginTop = '30px';
+        instructions.style.padding = '20px';
+        instructions.innerHTML = '<p style="margin: 0; font-weight: 700; font-size: 1.2em; color: var(--btn-text);">💡 Tip: Use mouse wheel to zoom in/out. Hold Shift + drag to box zoom. Double-click to reset zoom.</p>';
+        container.appendChild(instructions);
+    }
+});
+</script>
+{% endblock %}
+

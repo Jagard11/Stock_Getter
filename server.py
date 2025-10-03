@@ -4,9 +4,11 @@ FastAPI server for the Stock Tracker application.
 import os
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+
+import yfinance as yf
 
 from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -326,6 +328,26 @@ async def journal(request: Request):
     )
 
 
+@app.get("/daily-charts", response_class=HTMLResponse)
+async def daily_charts(request: Request):
+    """Daily charts page showing line charts for each tracked symbol."""
+    config = load_config()
+    current_theme = db.get_setting('theme', 'default')
+    
+    # Get chart data from database
+    chart_data = db.get_chart_data()
+    
+    return templates.TemplateResponse(
+        "daily_charts.html",
+        {
+            "request": request,
+            "config": config,
+            "chart_data": chart_data,
+            "current_theme": current_theme
+        }
+    )
+
+
 @app.get("/settings", response_class=HTMLResponse)
 async def settings(request: Request):
     """Settings page for configuration and data management."""
@@ -483,6 +505,65 @@ async def delete_date(date: str = Form(...)):
             raise HTTPException(status_code=500, detail="Failed to delete date")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Error deleting date: {str(e)}")
+
+
+@app.post("/journal/fetch-price")
+async def fetch_price(
+    symbol: str = Form(...),
+    date: str = Form(...)
+):
+    """Fetch stock price from Yahoo Finance for a given symbol and date.
+    
+    Uses symbol override mapping from config.json if available.
+    """
+    try:
+        config = load_config()
+        
+        # Get symbol override from config if it exists
+        ticker_map = config.get('tickers', {})
+        yahoo_symbol = ticker_map.get(symbol, symbol)
+        
+        # Parse the date - handle "DayName YYYY-MM-DD" format
+        date_str = date
+        if ' ' in date_str:
+            # Extract just the YYYY-MM-DD portion
+            date_str = date_str.split(' ', 1)[1]
+        
+        # Fetch data from Yahoo Finance
+        ticker = yf.Ticker(yahoo_symbol)
+        
+        # Get historical data for the specific date
+        # Fetch a range around the date to handle market closures
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        start_date = (date_obj - timedelta(days=7)).strftime('%Y-%m-%d')
+        end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        hist = ticker.history(start=start_date, end=end_date)
+        
+        if hist.empty:
+            raise HTTPException(status_code=404, detail=f"No price data found for {yahoo_symbol} on {date_str}")
+        
+        # Try to get the exact date, or the closest previous date
+        if date_str in hist.index.strftime('%Y-%m-%d').tolist():
+            price_data = hist[hist.index.strftime('%Y-%m-%d') == date_str].iloc[0]
+        else:
+            # Get the most recent price before or on the date
+            price_data = hist.iloc[-1]
+        
+        price = float(price_data['Close'])
+        
+        return {
+            "success": True,
+            "price": price,
+            "symbol": symbol,
+            "yahoo_symbol": yahoo_symbol,
+            "date": date_str
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching price: {str(e)}")
 
 
 if __name__ == "__main__":

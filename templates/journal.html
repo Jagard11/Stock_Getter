@@ -255,6 +255,56 @@
         transform: translateY(-1px);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
+    .value-popup .fetch-btn {
+        width: 100%;
+        background-color: #007bff;
+        color: white;
+        border: 2px solid #007bff;
+        padding: 10px 20px;
+        border-radius: 4px;
+        font-size: 0.95em;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 15px;
+    }
+
+    .value-popup .fetch-btn:hover:not(:disabled) {
+        background-color: #0056b3;
+        border-color: #0056b3;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .value-popup .fetch-btn:disabled {
+        background-color: #6c757d;
+        border-color: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+
+    .value-popup .fetch-status {
+        text-align: center;
+        margin: 10px 0;
+        font-size: 0.9em;
+        min-height: 20px;
+    }
+
+    .value-popup .fetch-status.success {
+        color: #28a745;
+        font-weight: 700;
+    }
+
+    .value-popup .fetch-status.error {
+        color: #dc3545;
+        font-weight: 700;
+    }
+
+    .value-popup .fetch-status.loading {
+        color: var(--text-secondary);
+        font-style: italic;
+    }
+
 
     .value-popup .delete-btn {
         background-color: #dc3545;
@@ -586,6 +636,62 @@ document.addEventListener('DOMContentLoaded', function() {
             // Hide edit hint
             if (editHint) editHint.style.display = 'none';
             
+            // Create fetch button and status area
+            const fetchContainer = document.createElement('div');
+            fetchContainer.innerHTML = `
+                <button class="fetch-btn" id="fetch-btn">🌐 Fetch Price from Internet</button>
+                <div class="fetch-status" id="fetch-status"></div>
+            `;
+            
+            // Insert fetch button after the input
+            input.parentElement.insertBefore(fetchContainer, input.nextSibling);
+            
+            const fetchBtn = fetchContainer.querySelector('#fetch-btn');
+            const fetchStatus = fetchContainer.querySelector('#fetch-status');
+            
+            // Fetch price handler
+            fetchBtn.addEventListener('click', async function() {
+                fetchBtn.disabled = true;
+                fetchStatus.textContent = 'Fetching price...';
+                fetchStatus.className = 'fetch-status loading';
+                
+                try {
+                    const formData = new FormData();
+                    formData.append('symbol', column);
+                    formData.append('date', date);
+                    
+                    const response = await fetch('/journal/fetch-price', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (!response.ok) {
+                        throw new Error(data.detail || 'Failed to fetch price');
+                    }
+                    
+                    // Update input with fetched price
+                    input.value = data.price.toFixed(2);
+                    
+                    // Show success message with symbol info
+                    let statusMsg = `✓ Fetched: $${data.price.toFixed(2)}`;
+                    if (data.yahoo_symbol !== data.symbol) {
+                        statusMsg += ` (using ${data.yahoo_symbol})`;
+                    }
+                    fetchStatus.textContent = statusMsg;
+                    fetchStatus.className = 'fetch-status success';
+                    
+                } catch (error) {
+                    console.error('Error fetching price:', error);
+                    fetchStatus.textContent = `✗ Error: ${error.message}`;
+                    fetchStatus.className = 'fetch-status error';
+                } finally {
+                    fetchBtn.disabled = false;
+                }
+            });
+
+            
             // Change close button to save/cancel buttons
             const buttonGroup = document.createElement('div');
             buttonGroup.className = 'button-group';
@@ -624,6 +730,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     alert('Failed to save cell value. Please try again.');
                     isEditing = false;
                     input.replaceWith(valueDisplay);
+                    fetchContainer.remove();
                     buttonGroup.replaceWith(closeBtn);
                 }
             };
@@ -631,6 +738,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const cancelEdit = () => {
                 isEditing = false;
                 input.replaceWith(valueDisplay);
+                fetchContainer.remove();
                 buttonGroup.replaceWith(closeBtn);
                 if (editHint) editHint.style.display = '';
             };

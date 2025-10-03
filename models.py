@@ -740,6 +740,76 @@ class Database:
             return {'symbols_imported': 0, 'symbols': [], 'error': str(e)}
         finally:
             conn.close()
+    
+    def get_chart_data(self) -> Dict[str, Any]:
+        """Get portfolio data formatted for charting.
+        
+        Returns:
+            Dictionary with symbol -> list of {date, value} pairs
+        """
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        try:
+            # Get all dates sorted ascending (oldest first for charts)
+            cursor.execute("""
+                SELECT id, date 
+                FROM portfolio_dates 
+                ORDER BY substr(date, instr(date, ' ') + 1) ASC
+            """)
+            dates = cursor.fetchall()
+            
+            # Get all symbols
+            cursor.execute("""
+                SELECT DISTINCT symbol, MIN(column_order) as min_order
+                FROM portfolio_holdings 
+                WHERE column_order IS NOT NULL
+                GROUP BY symbol
+                ORDER BY min_order
+            """)
+            symbols = [row['symbol'] for row in cursor.fetchall()]
+            
+            # Build chart data for each symbol
+            chart_data = {}
+            for symbol in symbols:
+                # Skip cash and e-trade symbols
+                if symbol.lower() in ['cash', 'e-trade', 'etrade']:
+                    continue
+                
+                data_points = []
+                for date_row in dates:
+                    date_id = date_row['id']
+                    date_str = date_row['date']
+                    
+                    # Extract just the YYYY-MM-DD portion
+                    if ' ' in date_str:
+                        date_only = date_str.split(' ', 1)[1]
+                    else:
+                        date_only = date_str
+                    
+                    # Get value for this symbol and date
+                    cursor.execute("""
+                        SELECT value 
+                        FROM portfolio_holdings 
+                        WHERE date_id = ? AND symbol = ?
+                    """, (date_id, symbol))
+                    
+                    row = cursor.fetchone()
+                    if row and row['value'] is not None:
+                        data_points.append({
+                            'date': date_only,
+                            'value': float(row['value'])
+                        })
+                
+                # Only include symbols that have at least one data point
+                if data_points:
+                    chart_data[symbol] = data_points
+            
+            return chart_data
+            
+        finally:
+            conn.close()
 
 
 def load_config() -> Dict[str, Any]:
