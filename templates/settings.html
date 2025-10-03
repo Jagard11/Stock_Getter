@@ -81,12 +81,6 @@
 </div>
 {% endif %}
 
-{% if request.query_params.get('theme_saved') %}
-<div class="card alert-success">
-    <p style="margin: 0; font-weight: 700;">✓ Theme preference saved successfully!</p>
-</div>
-{% endif %}
-
 <div class="card">
     <div class="settings-section">
         <h3>📁 Data Import</h3>
@@ -218,10 +212,6 @@
                     </label>
                 </div>
             </div>
-
-            <button id="save-theme-btn" class="btn" style="margin-top: 15px; width: 100%;">
-                💾 Save Theme Preference
-            </button>
         </div>
     </div>
 </div>
@@ -231,38 +221,30 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const themeOptions = document.querySelectorAll('input[name="theme"]');
-    const saveBtn = document.getElementById('save-theme-btn');
     
-    // Preview theme changes in real-time
+    // Apply and save theme changes automatically
     themeOptions.forEach(option => {
-        option.addEventListener('change', function() {
+        option.addEventListener('change', async function() {
             const theme = this.value;
             applyTheme(theme);
-        });
-    });
-    
-    // Save theme to database
-    saveBtn.addEventListener('click', async function() {
-        const selectedTheme = document.querySelector('input[name="theme"]:checked').value;
-        
-        try {
-            const response = await fetch('/settings/theme', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `theme=${selectedTheme}`
-            });
             
-            if (response.ok) {
-                window.location.href = '/settings?theme_saved=1';
-            } else {
-                alert('Error saving theme preference. Please try again.');
+            // Automatically save theme to database
+            try {
+                const response = await fetch('/settings/theme', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `theme=${theme}`
+                });
+                
+                if (!response.ok) {
+                    console.error('Error saving theme preference');
+                }
+            } catch (error) {
+                console.error('Error saving theme:', error);
             }
-        } catch (error) {
-            console.error('Error saving theme:', error);
-            alert('Error saving theme preference. Please try again.');
-        }
+        });
     });
     
     function applyTheme(theme) {

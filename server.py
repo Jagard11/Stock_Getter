@@ -381,10 +381,7 @@ async def save_theme(theme: str = Form(...)):
     
     db.set_setting('theme', theme)
     
-    return RedirectResponse(
-        url="/settings?theme_saved=1",
-        status_code=303
-    )
+    return {"success": True, "theme": theme}
 
 
 @app.post("/journal/import")
