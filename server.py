@@ -73,12 +73,19 @@ async def home(request: Request):
                 performance = ((total_value - previous_total) / previous_total) * 100
                 stats["recent_performance"] = performance
     
+    # Read README content
+    readme_content = ""
+    readme_path = Path("README.md")
+    if readme_path.exists():
+        readme_content = readme_path.read_text()
+    
     return templates.TemplateResponse(
         "index.html",
         {
             "request": request,
             "config": config,
             "stats": stats,
+            "readme_content": readme_content,
             "current_theme": current_theme
         }
     )

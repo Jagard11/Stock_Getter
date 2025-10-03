@@ -67,31 +67,97 @@
         margin-bottom: 15px;
     }
 
-    .stats {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 20px;
+    .readme-viewer {
         margin-top: 30px;
     }
 
-    .stat-card {
+    .readme-viewer h3 {
+        color: var(--accent-primary);
+        margin-bottom: 20px;
+    }
+
+    .readme-content {
+        background-color: var(--bg-tertiary);
+        border: 2px solid var(--border-primary);
+        border-radius: 4px;
+        padding: 20px;
+        max-height: 500px;
+        overflow-y: auto;
+        line-height: 1.8;
+        color: var(--text-primary);
+    }
+
+    .readme-content h1,
+    .readme-content h2,
+    .readme-content h3 {
+        color: var(--accent-primary);
+        margin-top: 20px;
+        margin-bottom: 10px;
+    }
+
+    .readme-content h1 {
+        font-size: 2em;
+        border-bottom: 2px solid var(--border-accent);
+        padding-bottom: 10px;
+    }
+
+    .readme-content h2 {
+        font-size: 1.5em;
+    }
+
+    .readme-content h3 {
+        font-size: 1.2em;
+    }
+
+    .readme-content ul,
+    .readme-content ol {
+        margin-left: 30px;
+        margin-top: 10px;
+        margin-bottom: 10px;
+    }
+
+    .readme-content li {
+        margin-bottom: 5px;
+    }
+
+    .readme-content code {
+        background-color: var(--bg-secondary);
+        padding: 2px 6px;
+        border-radius: 3px;
+        color: var(--accent-primary);
+        font-family: monospace;
+    }
+
+    .readme-content pre {
         background-color: var(--bg-secondary);
         border: 2px solid var(--border-primary);
-        border-radius: 8px;
-        padding: 20px;
-        text-align: center;
+        border-radius: 4px;
+        padding: 15px;
+        overflow-x: auto;
+        margin: 15px 0;
     }
 
-    .stat-card h4 {
-        color: var(--accent-primary);
-        font-size: 2em;
-        margin-bottom: 10px;
+    .readme-content pre code {
+        background-color: transparent;
+        padding: 0;
+    }
+
+    .readme-content a {
+        color: var(--link-color);
+        text-decoration: none;
+    }
+
+    .readme-content a:hover {
+        text-decoration: underline;
+    }
+
+    .readme-content p {
+        margin-bottom: 15px;
+    }
+
+    .readme-content strong {
         font-weight: 700;
-    }
-
-    .stat-card p {
-        color: var(--text-secondary);
-        font-size: 0.9em;
+        color: var(--text-primary);
     }
 </style>
 {% endblock %}
@@ -99,7 +165,6 @@
 {% block content %}
 <div class="card hero">
     <h2>Welcome to Stock Tracker</h2>
-    <p>Your comprehensive portfolio management and stock tracking solution. Monitor your investments, track performance, and make informed decisions.</p>
 </div>
 
 <div class="features">
@@ -110,50 +175,38 @@
         <a href="/journal" class="btn">View Journal</a>
     </div>
 
-    <div class="feature-card">
+    <div class="feature-card" onclick="window.location.href='/daily-charts'">
         <div class="icon">📈</div>
         <h3>Performance Analytics</h3>
         <p>Analyze your portfolio performance over time with detailed charts and metrics.</p>
-        <a href="#" class="btn btn-secondary" onclick="event.preventDefault(); alert('Coming soon!')">Coming Soon</a>
-    </div>
-
-    <div class="feature-card">
-        <div class="icon">💼</div>
-        <h3>Asset Management</h3>
-        <p>Manage your stock positions, track dividends, and maintain detailed records of all transactions.</p>
-        <a href="#" class="btn btn-secondary" onclick="event.preventDefault(); alert('Coming soon!')">Coming Soon</a>
+        <a href="/daily-charts" class="btn">View Charts</a>
     </div>
 </div>
 
-<div class="card" style="margin-top: 30px;">
-    <h3 style="text-align: center; margin-bottom: 20px;">Quick Stats</h3>
-    <div class="stats">
-        <div class="stat-card">
-            <h4>${{ "%.2f"|format(stats.total_value) if stats.total_value else "0.00" }}</h4>
-            <p>Total Portfolio Value</p>
-        </div>
-        <div class="stat-card">
-            <h4>{{ stats.holdings_count }}</h4>
-            <p>Holdings Tracked</p>
-        </div>
-        <div class="stat-card">
-            <h4>{% if stats.recent_performance > 0 %}+{% endif %}{{ "%.2f"|format(stats.recent_performance) }}%</h4>
-            <p>Recent Performance</p>
-        </div>
-        <div class="stat-card">
-            <h4>{{ stats.days_recorded }}</h4>
-            <p>Days Recorded</p>
-        </div>
+<div class="card readme-viewer">
+    <h3>About Stock Tracker</h3>
+    <div class="readme-content" id="readme-content">
+        {% if readme_content %}
+            {{ readme_content | safe }}
+        {% else %}
+            <p>README content not available.</p>
+        {% endif %}
     </div>
 </div>
 
-<div class="card" style="margin-top: 30px;">
-    <h3>Getting Started</h3>
-    <p style="margin-top: 15px; line-height: 1.8; color: var(--text-primary);">
-        <strong>1. View Your Journal:</strong> Click on the <a href="/journal" style="color: var(--link-color); font-weight: 600;">Journal</a> tab to see your portfolio holdings and track which assets are performing best.<br>
-        <strong>2. Track Performance:</strong> Monitor your investments over time and identify trends in your portfolio.<br>
-        <strong>3. Make Informed Decisions:</strong> Use the data to optimize your investment strategy and maximize returns.
-    </p>
-</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script>
+    // Convert markdown to HTML if readme_content exists
+    document.addEventListener('DOMContentLoaded', function() {
+        const readmeElement = document.getElementById('readme-content');
+        if (readmeElement && readmeElement.textContent.trim()) {
+            const markdownContent = readmeElement.textContent.trim();
+            readmeElement.innerHTML = marked.parse(markdownContent);
+        }
+    });
+</script>
 {% endblock %}
 
