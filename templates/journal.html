@@ -345,6 +345,110 @@
     }
 
     .card p {
+    /* Remove Symbol Modal */
+    .remove-symbol-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: var(--bg-secondary);
+        border: 4px solid var(--accent-primary);
+        border-radius: 12px;
+        padding: 30px 40px;
+        z-index: 1000;
+        box-shadow: 0 20px 80px rgba(0, 0, 0, 0.8), 
+                    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+        width: 600px;
+        max-width: 90vw;
+        height: 500px;
+        max-height: 80vh;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .remove-symbol-modal h3 {
+        color: var(--accent-primary);
+        margin: 0 0 20px 0;
+        font-size: 1.8em;
+        text-align: center;
+        padding-bottom: 15px;
+        border-bottom: 2px solid var(--border-accent);
+        flex-shrink: 0;
+    }
+    
+    .remove-symbol-modal .search-input {
+        width: 100%;
+        padding: 14px;
+        background-color: var(--bg-tertiary);
+        border: 2px solid var(--border-primary);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 1.1em;
+        margin-bottom: 15px;
+        flex-shrink: 0;
+    }
+    
+    .remove-symbol-modal .search-input:focus {
+        outline: 3px solid var(--focus-outline);
+        outline-offset: 2px;
+        border-color: var(--accent-primary);
+    }
+    
+    .remove-symbol-modal .symbol-list {
+        /* Scrollbar styling */
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent-primary) var(--bg-secondary);
+        overflow-y: auto;
+        border: 2px solid var(--border-primary);
+        border-radius: 6px;
+        margin-bottom: 20px;
+        flex: 1;
+        min-height: 200px;
+    }
+    
+    .remove-symbol-modal .symbol-item {
+        padding: 12px 15px;
+        cursor: pointer;
+        border-bottom: 1px solid var(--border-primary);
+        transition: background-color 0.2s;
+        font-size: 1.1em;
+    }
+
+    .remove-symbol-modal .symbol-list::-webkit-scrollbar {
+        width: 12px;
+    }
+
+    .remove-symbol-modal .symbol-list::-webkit-scrollbar-track {
+        background: var(--bg-secondary);
+        border-radius: 4px;
+    }
+
+    .remove-symbol-modal .symbol-list::-webkit-scrollbar-thumb {
+        background: var(--accent-primary);
+        border-radius: 4px;
+        border: 2px solid var(--bg-secondary);
+    }
+
+    .remove-symbol-modal .symbol-list::-webkit-scrollbar-thumb:hover {
+        background: var(--accent-hover);
+    }
+    
+    .remove-symbol-modal .symbol-item:hover {
+        background-color: var(--bg-tertiary);
+    }
+    
+    .remove-symbol-modal .symbol-item.selected {
+        background-color: var(--accent-primary);
+        color: var(--btn-text);
+        font-weight: 700;
+    }
+    
+    .remove-symbol-modal .button-group {
+        flex-shrink: 0;
+        display: flex;
+        gap: 10px;
+        margin-top: 20px;
+    }
         color: var(--text-secondary);
         margin-bottom: 5px;
     }
@@ -357,9 +461,22 @@
     <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Column order updated successfully!</p>
 </div>
 {% endif %}
+
 {% if request.query_params.get('symbol_added') %}
 <div class="alert alert-success">
     <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Symbol added successfully!</p>
+</div>
+{% endif %}
+
+{% if request.query_params.get('symbol_removed') %}
+<div class="alert alert-success">
+    <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Symbol {{ request.query_params.get('symbol_removed') }} removed successfully!</p>
+</div>
+{% endif %}
+
+{% if request.query_params.get('error') %}
+<div class="alert alert-error">
+    <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✗ {{ request.query_params.get('error') }}</p>
 </div>
 {% endif %}
 
@@ -367,17 +484,19 @@
 <div class="card journal-page-card">
     {% if journal_data %}
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 20px;">
-                <h2 style="margin: 0;">Portfolio Journal</h2>
+        <h2 style="margin: 0;">Portfolio Journal</h2>
         <div style="display: flex; gap: 10px;">
             <button id="add-symbol-btn" class="btn">
                 ➕ Add Symbol
             </button>
-        <button id="reorder-btn" class="btn btn-secondary">
-            ⇅ Reorder Columns
+            <button id="remove-symbol-btn" class="btn btn-danger">
+                ➖ Remove Symbol
+            </button>
+            <button id="reorder-btn" class="btn btn-secondary">
+                ⇅ Reorder Columns
+            </button>
         </div>
-        </button>
     </div>
-    
     <div class="journal-table" id="main-table-scroll">
         <table id="portfolio-table">
             <thead>
@@ -454,6 +573,173 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     
+
+    // Remove Symbol button handler
+    const removeSymbolBtn = document.getElementById('remove-symbol-btn');
+    if (removeSymbolBtn) {
+        removeSymbolBtn.addEventListener('click', function() {
+            // Get all column headers (symbols)
+            const headers = Array.from(table.querySelectorAll('th.sortable'))
+                .filter(h => h.dataset.column !== 'date')
+                .map(h => h.dataset.column);
+            
+            if (headers.length === 0) {
+                alert('No symbols to remove!');
+                return;
+            }
+            
+            // Create modal overlay
+            const overlay = document.createElement('div');
+            overlay.className = 'value-popup-overlay';
+            overlay.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.7); z-index: 999;';
+            
+            // Create modal
+            const modal = document.createElement('div');
+            modal.className = 'remove-symbol-modal';
+            // Force positioning with inline styles to ensure centering
+            modal.style.position = 'fixed';
+            modal.style.top = '50%';
+            modal.style.left = '50%';
+            modal.style.transform = 'translate(-50%, -50%)';
+            modal.style.zIndex = '1000';
+            
+            let selectedSymbol = null;
+            
+            modal.innerHTML = `
+                <h3>Remove Symbol</h3>
+                <input type="text" class="search-input" id="symbol-search" placeholder="Type to search..." />
+                <div class="symbol-list" id="symbol-list"></div>
+                <div class="button-group">
+                    <button class="btn" id="confirm-remove-btn" disabled>Remove Selected</button>
+                    <button class="btn btn-secondary" id="cancel-remove-btn">Cancel</button>
+                </div>
+            `;
+            
+            document.body.appendChild(overlay);
+            document.body.appendChild(modal);
+            
+            const symbolList = modal.querySelector('#symbol-list');
+            const searchInput = modal.querySelector('#symbol-search');
+            const confirmBtn = modal.querySelector('#confirm-remove-btn');
+            const cancelBtn = modal.querySelector('#cancel-remove-btn');
+            
+            
+            // Function to check if input exactly matches a symbol
+            function checkExactMatch() {
+                const inputValue = searchInput.value.trim().toUpperCase();
+                const exactMatch = headers.find(s => s.toUpperCase() === inputValue);
+                
+                if (exactMatch) {
+                    selectedSymbol = exactMatch;
+                    confirmBtn.disabled = false;
+                } else {
+                    selectedSymbol = null;
+                    confirmBtn.disabled = true;
+                }
+                
+                return exactMatch;
+            }
+            
+            // Function to render symbol list
+            function renderSymbols(filter = '') {
+                const filteredSymbols = headers.filter(s => 
+                    s.toLowerCase().includes(filter.toLowerCase())
+                );
+                
+                symbolList.innerHTML = '';
+                
+                if (filteredSymbols.length === 0) {
+                    symbolList.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--text-muted);">No symbols found</div>';
+                    confirmBtn.disabled = true;
+                    return;
+                }
+                
+                filteredSymbols.forEach(symbol => {
+                    const item = document.createElement('div');
+                    item.className = 'symbol-item';
+                    item.textContent = symbol;
+                    
+                    if (symbol === selectedSymbol) {
+                        item.classList.add('selected');
+                    }
+                    
+                    item.addEventListener('click', function() {
+                        // Fill search input with clicked symbol
+                        searchInput.value = symbol;
+                        selectedSymbol = symbol;
+                        confirmBtn.disabled = false;
+                        renderSymbols(symbol);
+                    });
+                    
+                    symbolList.appendChild(item);
+                });
+                
+                // Check for exact match after rendering
+                checkExactMatch();
+            }
+            
+            // Initial render
+            renderSymbols();
+            
+            // Search functionality
+            searchInput.addEventListener('input', function() {
+                renderSymbols(this.value);
+                checkExactMatch();
+            });
+            
+            
+            // Focus search input
+            searchInput.focus();
+            
+            // Close modal function
+            const closeModal = () => {
+                overlay.remove();
+                modal.remove();
+            };
+            
+            
+            // Prevent modal clicks from closing
+            modal.addEventListener('click', function(e) {
+                e.stopPropagation();
+            });
+            
+            // Cancel button
+            cancelBtn.addEventListener('click', closeModal);
+            
+            // Close only when clicking the overlay (background)
+            overlay.addEventListener('click', closeModal);
+            
+            
+            // Confirm remove button
+            confirmBtn.addEventListener('click', function() {
+                if (!selectedSymbol) return;
+                
+                const confirmed = confirm(`Are you sure you want to remove the symbol "${selectedSymbol}"?\n\nThis will delete all data for this symbol and cannot be undone.`);
+                
+                if (confirmed) {
+                    const form = document.createElement('form');
+                    form.method = 'POST';
+                    form.action = '/journal/remove-symbol';
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'symbol';
+                    input.value = selectedSymbol;
+                    form.appendChild(input);
+                    document.body.appendChild(form);
+                    form.submit();
+                }
+            });
+            
+            // Close on Escape key
+            const escHandler = (e) => {
+                if (e.key === 'Escape') {
+                    closeModal();
+                    document.removeEventListener('keydown', escHandler);
+                }
+            };
+            document.addEventListener('keydown', escHandler);
+        });
+    }
     // Add double-click handlers for editing cells
 
     headers.forEach(header => {

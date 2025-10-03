@@ -73,6 +73,9 @@ async def home(request: Request):
                 performance = ((total_value - previous_total) / previous_total) * 100
                 stats["recent_performance"] = performance
     
+    # Get all-time high statistics
+    ath_stats = db.get_all_time_high_stats()
+    
     # Read README content
     readme_content = ""
     readme_path = Path("README.md")
@@ -85,6 +88,7 @@ async def home(request: Request):
             "request": request,
             "config": config,
             "stats": stats,
+            "ath_stats": ath_stats,
             "readme_content": readme_content,
             "current_theme": current_theme
         }
@@ -581,12 +585,18 @@ async def add_symbol(symbol: str = Form(...)):
         # Validate symbol name
         symbol = symbol.strip().upper()
         if not symbol:
-            raise HTTPException(status_code=400, detail="Symbol cannot be empty")
+            return RedirectResponse(
+                url="/journal?error=Symbol+cannot+be+empty",
+                status_code=303
+            )
         
         # Check if symbol already exists
         _, existing_symbols = db.get_portfolio_data()
         if symbol in existing_symbols:
-            raise HTTPException(status_code=400, detail=f"Symbol '{symbol}' already exists")
+            return RedirectResponse(
+                url=f"/journal?error=Symbol+'{symbol}'+already+exists",
+                status_code=303
+            )
         
         # Add symbol to database with appropriate column order
         success = db.add_new_symbol(symbol)
@@ -597,11 +607,55 @@ async def add_symbol(symbol: str = Form(...)):
                 status_code=303
             )
         else:
-            raise HTTPException(status_code=500, detail="Failed to add symbol")
-    except HTTPException:
-        raise
+            return RedirectResponse(
+                url="/journal?error=Failed+to+add+symbol",
+                status_code=303
+            )
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Error adding symbol: {str(e)}")
+        return RedirectResponse(
+            url=f"/journal?error=Error+adding+symbol:+{str(e)}",
+            status_code=303
+        )
+
+
+@app.post("/journal/remove-symbol")
+async def remove_symbol(symbol: str = Form(...)):
+    """Remove a symbol column from the portfolio."""
+    try:
+        # Validate symbol name
+        symbol = symbol.strip().upper()
+        if not symbol:
+            return RedirectResponse(
+                url="/journal?error=Symbol+cannot+be+empty",
+                status_code=303
+            )
+        
+        # Check if symbol exists
+        _, existing_symbols = db.get_portfolio_data()
+        if symbol not in existing_symbols:
+            return RedirectResponse(
+                url=f"/journal?error=Symbol+'{symbol}'+not+found",
+                status_code=303
+            )
+        
+        # Remove symbol from database
+        success = db.remove_symbol(symbol)
+        
+        if success:
+            return RedirectResponse(
+                url=f"/journal?symbol_removed={symbol}",
+                status_code=303
+            )
+        else:
+            return RedirectResponse(
+                url="/journal?error=Failed+to+remove+symbol",
+                status_code=303
+            )
+    except Exception as e:
+        return RedirectResponse(
+            url=f"/journal?error=Error+removing+symbol:+{str(e)}",
+            status_code=303
+        )
 
 
 if __name__ == "__main__":

@@ -853,6 +853,35 @@ class Database:
         finally:
             conn.close()
     
+    def remove_symbol(self, symbol: str) -> bool:
+        """Remove a symbol from the portfolio.
+        
+        Args:
+            symbol: The stock symbol to remove
+        
+        Returns:
+            True if successful
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Delete all holdings for this symbol
+            cursor.execute("""
+                DELETE FROM portfolio_holdings
+                WHERE symbol = ?
+            """, (symbol,))
+            
+            rows_deleted = cursor.rowcount
+            conn.commit()
+            return rows_deleted > 0
+        except Exception as e:
+            print(f"Error removing symbol: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
     def get_all_time_high_stats(self) -> Dict[str, Any]:
         """Get all-time high statistics for the Total column.
         

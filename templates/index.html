@@ -159,6 +159,38 @@
         font-weight: 700;
         color: var(--text-primary);
     }
+
+    .ath-stats-card {
+        margin-top: 30px;
+        padding: 30px;
+    }
+
+    .ath-stats-card h3 {
+        color: var(--accent-primary);
+        margin-bottom: 20px;
+        font-size: 1.8em;
+        text-align: center;
+    }
+
+    .ath-stats-table {
+        width: 100%;
+        max-width: 900px;
+        margin: 20px auto;
+        font-size: 1.1em;
+    }
+
+    .ath-stats-table th {
+        text-align: center;
+        padding: 15px;
+        font-size: 1.1em;
+    }
+
+    .ath-stats-table td {
+        text-align: center;
+        padding: 20px;
+        font-size: 1.4em;
+        font-weight: 700;
+    }
 </style>
 {% endblock %}
 
@@ -166,6 +198,30 @@
 <div class="card hero">
     <h2>Welcome to Stock Tracker</h2>
 </div>
+
+{% if ath_stats and not ath_stats.error %}
+<div class="card ath-stats-card">
+    <h3>Portfolio All-Time High Statistics</h3>
+    <table class="ath-stats-table">
+        <thead>
+            <tr>
+                <th>Max</th>
+                <th>Current</th>
+                <th>Difference</th>
+                <th>Percent Diff</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td style="color: var(--accent-primary);">${{ "{:,.0f}".format(ath_stats.max) }}</td>
+                <td style="color: var(--text-primary);">${{ "{:,.0f}".format(ath_stats.current) }}</td>
+                <td style="color: {% if ath_stats.difference >= 0 %}var(--success-bg){% else %}var(--error-bg){% endif %};">${{ "{:,.0f}".format(ath_stats.difference) }}</td>
+                <td style="color: {% if ath_stats.percent_diff >= 100 %}var(--success-bg){% else %}var(--warning-bg){% endif %};">{{ "{:.2f}".format(ath_stats.percent_diff) }}%</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endif %}
 
 <div class="features">
     <div class="feature-card" onclick="window.location.href='/journal'">
