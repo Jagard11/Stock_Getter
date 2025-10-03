@@ -1,0 +1,775 @@
+{% extends "base.html" %}
+
+{% block title %}Import Rules{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .rules-header {
+        margin-bottom: 30px;
+    }
+
+    .rules-header h2 {
+        color: var(--accent-primary);
+        margin-bottom: 10px;
+    }
+
+    .rules-header p {
+        color: var(--text-secondary);
+        font-size: 1.1em;
+    }
+
+    .rules-section {
+        margin-bottom: 30px;
+    }
+
+    .rules-table {
+        width: 100%;
+        margin-top: 15px;
+    }
+
+    .rules-table thead {
+        background-color: var(--bg-tertiary);
+    }
+
+    .rules-table th {
+        padding: 12px;
+        text-align: left;
+        font-weight: 600;
+        color: var(--accent-primary);
+        border-bottom: 2px solid var(--border-accent);
+    }
+
+    .rules-table td {
+        padding: 12px;
+        border-bottom: 1px solid var(--border-primary);
+    }
+
+    .rules-table tr:hover {
+        background-color: var(--bg-tertiary);
+    }
+
+    .btn-group {
+        display: flex;
+        gap: 8px;
+    }
+
+    .btn-small {
+        padding: 6px 12px;
+        font-size: 0.9em;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 40px 20px;
+        color: var(--text-secondary);
+        font-style: italic;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 0.85em;
+        font-weight: 600;
+    }
+
+    .status-enabled {
+        background-color: var(--success-bg);
+        color: var(--btn-text);
+    }
+
+    .status-disabled {
+        background-color: var(--text-muted);
+        color: var(--bg-primary);
+    }
+
+    .formula-display {
+        font-family: 'Courier New', monospace;
+        background-color: var(--bg-tertiary);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.9em;
+    }
+
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.7);
+        overflow-y: auto;
+    }
+
+    .modal-content {
+        background-color: var(--bg-secondary);
+        margin: 5% auto;
+        padding: 30px;
+        border: 2px solid var(--border-accent);
+        border-radius: 8px;
+        width: 90%;
+        max-width: 600px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+
+    .modal-header {
+        margin-bottom: 20px;
+    }
+
+    .modal-header h3 {
+        color: var(--accent-primary);
+        margin-bottom: 10px;
+    }
+
+    .close-modal {
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+        color: var(--text-secondary);
+        cursor: pointer;
+        line-height: 20px;
+    }
+
+    .close-modal:hover {
+        color: var(--accent-primary);
+    }
+
+    .section-description {
+        background-color: var(--bg-tertiary);
+        border-left: 4px solid var(--accent-primary);
+        padding: 15px;
+        margin-bottom: 20px;
+        color: var(--text-secondary);
+    }
+
+    .section-description strong {
+        color: var(--accent-primary);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="rules-header">
+    <h2>📋 Import Rules Configuration</h2>
+    <p>Configure how stock holdings CSV imports are processed and which symbols to track.</p>
+</div>
+
+<!-- Symbol Mappings Section -->
+<div class="card">
+    <div class="rules-section">
+        <h3>🔗 Symbol Mappings</h3>
+        <div class="section-description">
+            <strong>Purpose:</strong> Map journal column names to Yahoo Finance ticker symbols. Use this when your preferred display name differs from the actual market symbol (e.g., "WTI" → "CL=F").
+        </div>
+        
+        {% if symbol_mappings %}
+        <table class="rules-table">
+            <thead>
+                <tr>
+                    <th>Journal Symbol</th>
+                    <th>Yahoo Finance Symbol</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for mapping in symbol_mappings %}
+                <tr>
+                    <td><strong>{{ mapping.journal_symbol }}</strong></td>
+                    <td><code>{{ mapping.yahoo_symbol }}</code></td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-small btn-secondary" onclick="editMapping({{ mapping.id }}, '{{ mapping.journal_symbol }}', '{{ mapping.yahoo_symbol }}')">Edit</button>
+                            <button class="btn btn-small btn-danger" onclick="deleteMapping({{ mapping.id }}, '{{ mapping.journal_symbol }}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            No symbol mappings configured. Click "Add Mapping" to create one.
+        </div>
+        {% endif %}
+        
+        <div style="margin-top: 20px;">
+            <button class="btn" onclick="showAddMappingModal()">+ Add Symbol Mapping</button>
+        </div>
+    </div>
+</div>
+
+<!-- Auto-Fetch Symbols Section -->
+<div class="card">
+    <div class="rules-section">
+        <h3>📡 Auto-Fetch Symbols</h3>
+        <div class="section-description">
+            <strong>Purpose:</strong> Automatically fetch market prices for these symbols during CSV import, even if they're not present in the import file. Useful for tracking benchmark symbols like IBIT for comparison.
+        </div>
+        
+        {% if auto_fetch_symbols %}
+        <table class="rules-table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for symbol in auto_fetch_symbols %}
+                <tr>
+                    <td><strong>{{ symbol.symbol }}</strong></td>
+                    <td>
+                        {% if symbol.enabled %}
+                        <span class="status-badge status-enabled">Enabled</span>
+                        {% else %}
+                        <span class="status-badge status-disabled">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            {% if symbol.enabled %}
+                            <button class="btn btn-small btn-secondary" onclick="toggleAutoFetch({{ symbol.id }}, false)">Disable</button>
+                            {% else %}
+                            <button class="btn btn-small" onclick="toggleAutoFetch({{ symbol.id }}, true)">Enable</button>
+                            {% endif %}
+                            <button class="btn btn-small btn-danger" onclick="deleteAutoFetch({{ symbol.id }}, '{{ symbol.symbol }}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            No auto-fetch symbols configured. Click "Add Symbol" to create one.
+        </div>
+        {% endif %}
+        
+        <div style="margin-top: 20px;">
+            <button class="btn" onclick="showAddAutoFetchModal()">+ Add Auto-Fetch Symbol</button>
+        </div>
+    </div>
+</div>
+
+<!-- Calculated Columns Section -->
+<div class="card">
+    <div class="rules-section">
+        <h3>🧮 Calculated Columns</h3>
+        <div class="section-description">
+            <strong>Purpose:</strong> Define columns computed from CSV data using formulas. For example, sum all holdings from a specific account or extract specific account values. These won't fetch prices from Yahoo Finance.
+        </div>
+        
+        {% if calculated_columns %}
+        <table class="rules-table">
+            <thead>
+                <tr>
+                    <th>Column Name</th>
+                    <th>Formula</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for column in calculated_columns %}
+                <tr>
+                    <td><strong>{{ column.column_name }}</strong></td>
+                    <td>
+                        <div class="formula-display">
+                            {{ column.calculation_type | upper }}
+                            {% if column.config.source_symbol %}({{ column.config.source_symbol }}){% endif %}
+                            {% if column.config.account_filter %} - Account #{{ column.config.account_filter }}{% endif %}
+                            {% if column.config.aggregation %} - {{ column.config.aggregation | capitalize }}{% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-small btn-secondary" 
+                                onclick='editCalculated({{ column.id }}, "{{ column.column_name }}", "{{ column.calculation_type }}", {{ column.config | tojson | safe }})'>
+                                Edit
+                            </button>
+                            <button class="btn btn-small btn-danger" onclick="deleteCalculated({{ column.id }}, '{{ column.column_name }}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            No calculated columns configured. Click "Add Calculated Column" to create one.
+        </div>
+        {% endif %}
+        
+        <div style="margin-top: 20px;">
+            <button class="btn" onclick="showAddCalculatedModal()">+ Add Calculated Column</button>
+        </div>
+    </div>
+</div>
+
+<!-- Excluded Symbols Section -->
+<div class="card">
+    <div class="rules-section">
+        <h3>🚫 Excluded Symbols</h3>
+        <div class="section-description">
+            <strong>Purpose:</strong> Hide symbols from the journal display. These symbols can still be used in calculated column formulas, but won't appear as separate columns. Useful for intermediate values like VMFXX.
+        </div>
+        
+        {% if excluded_symbols %}
+        <table class="rules-table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Reason</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for exclusion in excluded_symbols %}
+                <tr>
+                    <td><strong>{{ exclusion.symbol }}</strong></td>
+                    <td>{{ exclusion.reason or '-' }}</td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-small btn-danger" onclick="deleteExclusion({{ exclusion.id }}, '{{ exclusion.symbol }}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            No excluded symbols configured. Click "Add Exclusion" to create one.
+        </div>
+        {% endif %}
+        
+        <div style="margin-top: 20px;">
+            <button class="btn" onclick="showAddExclusionModal()">+ Add Exclusion</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Symbol Mapping Modal -->
+<div id="mappingModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span class="close-modal" onclick="closeMappingModal()">&times;</span>
+            <h3 id="mappingModalTitle">Add Symbol Mapping</h3>
+        </div>
+        <form id="mappingForm" onsubmit="saveMappingSubmit(event)">
+            <input type="hidden" id="mappingId" value="">
+            <div class="form-group">
+                <label for="journalSymbol">Journal Symbol (Display Name)</label>
+                <input type="text" id="journalSymbol" placeholder="e.g., WTI" required>
+            </div>
+            <div class="form-group">
+                <label for="yahooSymbol">Yahoo Finance Symbol</label>
+                <input type="text" id="yahooSymbol" placeholder="e.g., CL=F" required>
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn">Save</button>
+                <button type="button" class="btn btn-secondary" onclick="closeMappingModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Auto-Fetch Symbol Modal -->
+<div id="autoFetchModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span class="close-modal" onclick="closeAutoFetchModal()">&times;</span>
+            <h3>Add Auto-Fetch Symbol</h3>
+        </div>
+        <form id="autoFetchForm" onsubmit="saveAutoFetchSubmit(event)">
+            <div class="form-group">
+                <label for="autoFetchSymbol">Symbol</label>
+                <input type="text" id="autoFetchSymbol" placeholder="e.g., IBIT" required>
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn">Save</button>
+                <button type="button" class="btn btn-secondary" onclick="closeAutoFetchModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Calculated Column Modal -->
+<div id="calculatedModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span class="close-modal" onclick="closeCalculatedModal()">&times;</span>
+            <h3 id="calculatedModalTitle">Add Calculated Column</h3>
+        </div>
+        <form id="calculatedForm" onsubmit="saveCalculatedSubmit(event)">
+            <input type="hidden" id="calculatedId" value="">
+            <div class="form-group">
+                <label for="columnName">Column Name</label>
+                <input type="text" id="columnName" placeholder="e.g., Cash, Trust" required>
+            </div>
+            <div class="form-group">
+                <label for="calculationType">Calculation Type</label>
+                <select id="calculationType" required>
+                    <option value="account_filter">Account Filter</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="sourceSymbol">Source Symbol (Optional)</label>
+                <input type="text" id="sourceSymbol" placeholder="e.g., VMFXX">
+                <small style="color: var(--text-muted); display: block; margin-top: 5px;">Leave empty to include all symbols</small>
+            </div>
+            <div class="form-group">
+                <label for="accountFilter">Account Number</label>
+                <input type="text" id="accountFilter" placeholder="e.g., 4" required>
+            </div>
+            <div class="form-group">
+                <label for="valueColumn">Value Column</label>
+                <select id="valueColumn" required>
+                    <option value="total_value">Total Value</option>
+                    <option value="share_price">Share Price</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="aggregation">Aggregation</label>
+                <select id="aggregation" required>
+                    <option value="single">Single (one entry expected)</option>
+                    <option value="sum">Sum (add all matching entries)</option>
+                </select>
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn">Save</button>
+                <button type="button" class="btn btn-secondary" onclick="closeCalculatedModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Exclusion Modal -->
+<div id="exclusionModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span class="close-modal" onclick="closeExclusionModal()">&times;</span>
+            <h3>Add Symbol Exclusion</h3>
+        </div>
+        <form id="exclusionForm" onsubmit="saveExclusionSubmit(event)">
+            <div class="form-group">
+                <label for="exclusionSymbol">Symbol</label>
+                <input type="text" id="exclusionSymbol" placeholder="e.g., VMFXX" required>
+            </div>
+            <div class="form-group">
+                <label for="exclusionReason">Reason (Optional)</label>
+                <input type="text" id="exclusionReason" placeholder="e.g., Used in Cash calculation">
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn">Save</button>
+                <button type="button" class="btn btn-secondary" onclick="closeExclusionModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+    // Symbol Mapping Functions
+    function showAddMappingModal() {
+        document.getElementById('mappingModalTitle').textContent = 'Add Symbol Mapping';
+        document.getElementById('mappingId').value = '';
+        document.getElementById('journalSymbol').value = '';
+        document.getElementById('yahooSymbol').value = '';
+        document.getElementById('mappingModal').style.display = 'block';
+    }
+
+    function editMapping(id, journalSymbol, yahooSymbol) {
+        document.getElementById('mappingModalTitle').textContent = 'Edit Symbol Mapping';
+        document.getElementById('mappingId').value = id;
+        document.getElementById('journalSymbol').value = journalSymbol;
+        document.getElementById('yahooSymbol').value = yahooSymbol;
+        document.getElementById('mappingModal').style.display = 'block';
+    }
+
+    function closeMappingModal() {
+        document.getElementById('mappingModal').style.display = 'none';
+    }
+
+    async function saveMappingSubmit(event) {
+        event.preventDefault();
+        
+        const id = document.getElementById('mappingId').value;
+        const formData = new FormData();
+        formData.append('journal_symbol', document.getElementById('journalSymbol').value);
+        formData.append('yahoo_symbol', document.getElementById('yahooSymbol').value);
+        
+        if (id) {
+            formData.append('mapping_id', id);
+        }
+        
+        try {
+            const response = await fetch('/import-rules/symbol-mapping', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('✓ Symbol mapping saved successfully!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to save'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteMapping(id, symbol) {
+        if (!confirm(`Delete symbol mapping for "${symbol}"?`)) return;
+        
+        try {
+            const response = await fetch(`/import-rules/symbol-mapping/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                showToast('🗑️ Symbol mapping deleted!', 'removal');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to delete'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    // Auto-Fetch Functions
+    function showAddAutoFetchModal() {
+        document.getElementById('autoFetchSymbol').value = '';
+        document.getElementById('autoFetchModal').style.display = 'block';
+    }
+
+    function closeAutoFetchModal() {
+        document.getElementById('autoFetchModal').style.display = 'none';
+    }
+
+    async function saveAutoFetchSubmit(event) {
+        event.preventDefault();
+        
+        const formData = new FormData();
+        formData.append('symbol', document.getElementById('autoFetchSymbol').value);
+        
+        try {
+            const response = await fetch('/import-rules/auto-fetch', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('✓ Auto-fetch symbol added!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to save'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    async function toggleAutoFetch(id, enabled) {
+        const formData = new FormData();
+        formData.append('enabled', enabled);
+        
+        try {
+            const response = await fetch(`/import-rules/auto-fetch/${id}/toggle`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('✓ Symbol ' + (enabled ? 'enabled' : 'disabled') + '!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to update'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteAutoFetch(id, symbol) {
+        if (!confirm(`Delete auto-fetch symbol "${symbol}"?`)) return;
+        
+        try {
+            const response = await fetch(`/import-rules/auto-fetch/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                showToast('🗑️ Auto-fetch symbol deleted!', 'removal');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to delete'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    // Calculated Column Functions
+    function showAddCalculatedModal() {
+        document.getElementById('calculatedModalTitle').textContent = 'Add Calculated Column';
+        document.getElementById('calculatedId').value = '';
+        document.getElementById('columnName').value = '';
+        document.getElementById('calculationType').value = 'account_filter';
+        document.getElementById('sourceSymbol').value = '';
+        document.getElementById('accountFilter').value = '';
+        document.getElementById('valueColumn').value = 'total_value';
+        document.getElementById('aggregation').value = 'single';
+        document.getElementById('calculatedModal').style.display = 'block';
+    }
+
+    function editCalculated(id, columnName, calculationType, config) {
+        document.getElementById('calculatedModalTitle').textContent = 'Edit Calculated Column';
+        document.getElementById('calculatedId').value = id;
+        document.getElementById('columnName').value = columnName;
+        document.getElementById('calculationType').value = calculationType;
+        document.getElementById('sourceSymbol').value = config.source_symbol || '';
+        document.getElementById('accountFilter').value = config.account_filter || '';
+        document.getElementById('valueColumn').value = config.value_column || 'total_value';
+        document.getElementById('aggregation').value = config.aggregation || 'sum';
+        document.getElementById('calculatedModal').style.display = 'block';
+    }
+
+    function closeCalculatedModal() {
+        document.getElementById('calculatedModal').style.display = 'none';
+    }
+
+    async function saveCalculatedSubmit(event) {
+        event.preventDefault();
+        
+        const config = {
+            source_symbol: document.getElementById('sourceSymbol').value,
+            account_filter: document.getElementById('accountFilter').value,
+            value_column: document.getElementById('valueColumn').value,
+            aggregation: document.getElementById('aggregation').value
+        };
+        
+        const formData = new FormData();
+        formData.append('column_name', document.getElementById('columnName').value);
+        formData.append('calculation_type', document.getElementById('calculationType').value);
+        formData.append('config_json', JSON.stringify(config));
+        
+        const id = document.getElementById('calculatedId').value;
+        if (id) {
+            formData.append('column_id', id);
+        }
+        
+        try {
+            const response = await fetch('/import-rules/calculated-column', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('✓ Calculated column saved!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to save'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteCalculated(id, columnName) {
+        if (!confirm(`Delete calculated column "${columnName}"?`)) return;
+        
+        try {
+            const response = await fetch(`/import-rules/calculated-column/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                showToast('🗑️ Calculated column deleted!', 'removal');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to delete'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    // Exclusion Functions
+    function showAddExclusionModal() {
+        document.getElementById('exclusionSymbol').value = '';
+        document.getElementById('exclusionReason').value = '';
+        document.getElementById('exclusionModal').style.display = 'block';
+    }
+
+    function closeExclusionModal() {
+        document.getElementById('exclusionModal').style.display = 'none';
+    }
+
+    async function saveExclusionSubmit(event) {
+        event.preventDefault();
+        
+        const formData = new FormData();
+        formData.append('symbol', document.getElementById('exclusionSymbol').value);
+        formData.append('reason', document.getElementById('exclusionReason').value);
+        
+        try {
+            const response = await fetch('/import-rules/exclusion', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('✓ Symbol exclusion added!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to save'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteExclusion(id, symbol) {
+        if (!confirm(`Remove exclusion for "${symbol}"?`)) return;
+        
+        try {
+            const response = await fetch(`/import-rules/exclusion/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                showToast('🗑️ Symbol exclusion removed!', 'removal');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to delete'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    // Close modals when clicking outside
+    window.onclick = function(event) {
+        if (event.target.classList.contains('modal')) {
+            event.target.style.display = 'none';
+        }
+    }
+</script>
+{% endblock %}
+

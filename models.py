@@ -7,6 +7,11 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
+try:
+    import yfinance as yf
+except ImportError:
+    yf = None
+
 
 class Database:
     """Handles all database operations for the Inspector system."""
@@ -79,6 +84,61 @@ class Database:
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL,
                 modified_at TEXT NOT NULL
+            )
+        """)
+        
+        # Create symbol_mappings table - Maps journal symbols to Yahoo Finance tickers
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS symbol_mappings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                journal_symbol TEXT NOT NULL UNIQUE,
+                yahoo_symbol TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL
+            )
+        """)
+        
+        # Create auto_fetch_symbols table - Symbols to fetch during import even if not in CSV
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS auto_fetch_symbols (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL UNIQUE,
+                enabled INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL
+            )
+        """)
+        
+        # Create calculated_columns table - Columns computed from CSV data
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS calculated_columns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                column_name TEXT NOT NULL UNIQUE,
+                calculation_type TEXT NOT NULL,
+                config_json TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL
+            )
+        """)
+        
+        # Create excluded_symbols table - Symbols to hide from journal
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS excluded_symbols (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL UNIQUE,
+                reason TEXT,
+                created_at TEXT NOT NULL
+            )
+        """)
+        
+        # Create import_warnings table - Track import validation warnings
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS import_warnings (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                import_date TEXT NOT NULL,
+                warning_type TEXT NOT NULL,
+                message TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                created_at TEXT NOT NULL
             )
         """)
         
@@ -616,16 +676,25 @@ class Database:
         - Second instance of "Account Number" marks the end of holdings data
         - Multiple accounts may hold the same stock symbol
         
+        Applies import rules:
+        - Symbol mappings (for Yahoo Finance fetch)
+        - Calculated columns (formulas from CSV data)
+        - Auto-fetch symbols (fetch even if not in CSV)
+        - Excluded symbols (hide from journal)
+        
         Args:
             csv_data: List of rows, where each row is a list of cell values
         
         Returns:
-            Dictionary with 'symbols_imported' (count) and 'symbols' (list of symbols)
+            Dictionary with import results and warnings
         """
         conn = self.get_connection()
         cursor = conn.cursor()
         
+        warnings = []
+        
         try:
+            # === STEP 1: Parse CSV Data ===
             # Find the second instance of "Account Number" in column A (index 0)
             account_number_count = 0
             holdings_end_index = len(csv_data)
@@ -646,10 +715,11 @@ class Database:
                     break
             
             if header_index == -1:
-                return {'symbols_imported': 0, 'symbols': [], 'error': 'Could not find header row'}
+                return {'symbols_imported': 0, 'error': 'Could not find header row', 'warnings': []}
             
-            # Parse holdings data (rows after header, before second "Account Number")
-            holdings_dict = {}  # symbol -> share_price
+            # Parse ALL holdings data (keep account-level detail for calculated columns)
+            raw_holdings = []  # List of {account, symbol, shares, share_price, total_value}
+            symbols_from_csv = {}  # symbol -> share_price (for unique symbols)
             
             for row in csv_data[header_index + 1:holdings_end_index]:
                 # Skip empty rows
@@ -664,26 +734,179 @@ class Database:
                 account_number = str(row[0]).strip()
                 investment_name = str(row[1]).strip() if len(row) > 1 else ""
                 symbol = str(row[2]).strip() if len(row) > 2 else ""
+                shares_str = str(row[3]).strip() if len(row) > 3 else ""
                 share_price_str = str(row[4]).strip() if len(row) > 4 else ""
+                total_value_str = str(row[5]).strip() if len(row) > 5 else ""
                 
-                # Skip rows without valid symbol or share price
-                if not symbol or symbol.lower() == 'null' or not share_price_str:
+                # Skip rows without valid symbol
+                if not symbol or symbol.lower() == 'null':
                     continue
                 
-                # Parse share price
+                # Parse values
                 try:
-                    share_price = float(share_price_str.replace('$', '').replace(',', ''))
+                    shares = float(shares_str.replace(',', '')) if shares_str else 0
+                    share_price = float(share_price_str.replace('$', '').replace(',', '')) if share_price_str else 0
+                    total_value = float(total_value_str.replace('$', '').replace(',', '')) if total_value_str else 0
                 except (ValueError, AttributeError):
                     continue
                 
-                # Store the first occurrence of each symbol (they should all have the same share price)
-                if symbol not in holdings_dict:
-                    holdings_dict[symbol] = share_price
+                # Store raw holding for calculated columns
+                raw_holdings.append({
+                    'account': account_number,
+                    'investment_name': investment_name,
+                    'symbol': symbol,
+                    'shares': shares,
+                    'share_price': share_price,
+                    'total_value': total_value
+                })
+                
+                # Store unique symbol price
+                if symbol not in symbols_from_csv and share_price > 0:
+                    symbols_from_csv[symbol] = share_price
             
-            # Get today's date in the required format
+            # === STEP 2: Get Import Rules ===
+            calculated_columns = self.get_calculated_columns()
+            auto_fetch_symbols = [s for s in self.get_auto_fetch_symbols() if s['enabled']]
+            # Case-insensitive exclusion list
+            excluded_symbols_list = [s['symbol'].upper() for s in self.get_excluded_symbols()]
+            
+            # === STEP 3: Get Date and Validate ===
             today = datetime.now()
             date_str = today.strftime("%a %Y-%m-%d")
             
+            # Check for market hours warning
+            if today.weekday() < 5 and 9 <= today.hour < 16:  # Weekday, market hours
+                warnings.append({
+                    'type': 'market_hours',
+                    'severity': 'warning',
+                    'message': 'Market is still open. Prices may not reflect today\'s close.'
+                })
+            
+            # Check for weekend/holiday warning
+            if today.weekday() >= 5:  # Saturday or Sunday
+                warnings.append({
+                    'type': 'non_trading_day',
+                    'severity': 'info',
+                    'message': f'{today.strftime("%A")} is not a trading day.'
+                })
+            
+            # Check for missing days
+            cursor.execute("""
+                SELECT date FROM portfolio_dates
+                ORDER BY substr(date, instr(date, ' ') + 1) DESC
+                LIMIT 1
+            """)
+            last_date_row = cursor.fetchone()
+            if last_date_row:
+                last_date_str = last_date_row[0]
+                if ' ' in last_date_str:
+                    try:
+                        last_date = datetime.strptime(last_date_str.split(' ', 1)[1], '%Y-%m-%d')
+                        days_gap = (today - last_date).days
+                        if days_gap > 1:
+                            warnings.append({
+                                'type': 'missing_days',
+                                'severity': 'info',
+                                'message': f'Gap of {days_gap} days since last import on {last_date_str}.'
+                            })
+                    except:
+                        pass
+            
+            # === STEP 4: Calculate Formula Columns ===
+            final_values = {}  # symbol -> value
+            csv_symbols = []
+            calculated_symbols = []
+            auto_fetched_symbols = []
+            excluded_symbols_used = []
+            
+            # Add CSV symbols (excluding those that will be excluded)
+            for symbol, price in symbols_from_csv.items():
+                # Case-insensitive exclusion check
+                if symbol.upper() not in excluded_symbols_list:
+                    final_values[symbol] = price
+                    csv_symbols.append(symbol)
+                else:
+                    excluded_symbols_used.append(symbol)
+            
+            # Process calculated columns
+            for calc_col in calculated_columns:
+                col_name = calc_col['column_name']
+                calc_type = calc_col['calculation_type']
+                config = calc_col['config']
+                
+                if calc_type == 'account_filter':
+                    # Filter holdings by account and optional symbol
+                    account_filter = config.get('account_filter', '')
+                    source_symbol = config.get('source_symbol', '')
+                    value_column = config.get('value_column', 'total_value')
+                    aggregation = config.get('aggregation', 'sum')
+                    
+                    # Filter holdings
+                    filtered = [h for h in raw_holdings if h['account'] == account_filter]
+                    if source_symbol:
+                        filtered = [h for h in filtered if h['symbol'] == source_symbol]
+                    
+                    if not filtered:
+                        warnings.append({
+                            'type': 'calculated_column',
+                            'severity': 'warning',
+                            'message': f'{col_name}: No matching entries found (Account #{account_filter})'
+                        })
+                        continue
+                    
+                    # Get values
+                    values = [h[value_column] for h in filtered]
+                    
+                    # Aggregate
+                    if aggregation == 'sum':
+                        result = sum(values)
+                    elif aggregation == 'single':
+                        result = values[0] if values else 0
+                    else:
+                        result = sum(values)  # Default to sum
+                    
+                    final_values[col_name] = result
+                    calculated_symbols.append(col_name)
+            
+            # === STEP 5: Auto-Fetch Missing Symbols ===
+            for auto_fetch in auto_fetch_symbols:
+                fetch_symbol = auto_fetch['symbol']
+                
+                # Check if this is a Yahoo symbol that maps back to a journal symbol
+                # e.g., CL=F should create WTI column if mapping exists: WTI → CL=F
+                journal_symbol = self.get_reverse_symbol_mapping(fetch_symbol)
+                if journal_symbol:
+                    # This is a Yahoo symbol, use the journal name as column name
+                    column_name = journal_symbol
+                    yahoo_symbol_to_fetch = fetch_symbol
+                    print(f"Auto-fetching {fetch_symbol} (will create {column_name} column)...")
+                else:
+                    # No reverse mapping, use the symbol as-is
+                    column_name = fetch_symbol
+                    yahoo_symbol_to_fetch = fetch_symbol
+                    print(f"Auto-fetching {fetch_symbol}...")
+                
+                # Don't overwrite existing columns
+                if column_name not in final_values:
+                    fetch_result = fetch_yahoo_price(column_name, date_str, self)
+                    if fetch_result:
+                        final_values[column_name] = fetch_result['price']
+                        auto_fetched_symbols.append(column_name)
+                        print(f"  ✓ Fetched {column_name} → ${fetch_result['price']:.2f} (using {fetch_result['yahoo_symbol']})")
+                    else:
+                        warning_msg = f'Could not fetch price for {column_name}'
+                        if journal_symbol:
+                            warning_msg += f' (tried {yahoo_symbol_to_fetch})'
+                        warnings.append({
+                            'type': 'auto_fetch',
+                            'severity': 'warning',
+                            'message': warning_msg
+                        })
+                        print(f"  ✗ Failed to fetch {column_name} (tried {fetch_result.get('yahoo_symbol', fetch_symbol) if fetch_result else yahoo_symbol_to_fetch})")
+                else:
+                    print(f"  ⊘ Skipping {column_name} (already exists in CSV or calculated columns)")
+            
+            # === STEP 6: Store to Database ===
             # Insert or get date record
             cursor.execute("""
                 INSERT OR IGNORE INTO portfolio_dates (date, imported_at)
@@ -706,9 +929,8 @@ class Database:
             # Determine column order for new symbols
             next_order = len(existing_symbols)
             
-            # Insert/update holdings for today
-            symbols_imported = []
-            for symbol, share_price in holdings_dict.items():
+            # Insert/update holdings
+            for symbol, value in final_values.items():
                 # Determine column order
                 if symbol in existing_symbols:
                     column_order = existing_symbols.index(symbol)
@@ -722,22 +944,35 @@ class Database:
                     VALUES (?, ?, ?, ?)
                     ON CONFLICT(date_id, symbol) 
                     DO UPDATE SET value = ?, column_order = ?
-                """, (date_id, symbol, share_price, column_order, share_price, column_order))
-                
-                symbols_imported.append(symbol)
+                """, (date_id, symbol, value, column_order, value, column_order))
+            
+            # === STEP 7: Store Warnings ===
+            now = datetime.now().isoformat()
+            for warning in warnings:
+                cursor.execute("""
+                    INSERT INTO import_warnings (import_date, warning_type, message, severity, created_at)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (date_str, warning['type'], warning['message'], warning['severity'], now))
             
             conn.commit()
+            
             return {
-                'symbols_imported': len(symbols_imported),
-                'symbols': symbols_imported,
-                'date': date_str
+                'success': True,
+                'date': date_str,
+                'symbols_imported': len(final_values),
+                'csv_symbols': csv_symbols,
+                'calculated_symbols': calculated_symbols,
+                'auto_fetched_symbols': auto_fetched_symbols,
+                'excluded_symbols': excluded_symbols_used,
+                'warnings': warnings
             }
+            
         except Exception as e:
             print(f"Error importing stock holdings CSV: {e}")
             import traceback
             traceback.print_exc()
             conn.rollback()
-            return {'symbols_imported': 0, 'symbols': [], 'error': str(e)}
+            return {'success': False, 'error': str(e), 'warnings': warnings}
         finally:
             conn.close()
     
@@ -961,6 +1196,410 @@ class Database:
             
         finally:
             conn.close()
+    
+    # ========== Symbol Mappings Methods ==========
+    
+    def get_symbol_mappings(self) -> List[Dict[str, Any]]:
+        """Get all symbol mappings."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM symbol_mappings
+            ORDER BY journal_symbol
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def add_symbol_mapping(self, journal_symbol: str, yahoo_symbol: str) -> int:
+        """Add a new symbol mapping."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO symbol_mappings (journal_symbol, yahoo_symbol, created_at, modified_at)
+            VALUES (?, ?, ?, ?)
+        """, (journal_symbol, yahoo_symbol, now, now))
+        
+        mapping_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return mapping_id
+    
+    def update_symbol_mapping(self, mapping_id: int, journal_symbol: str, yahoo_symbol: str) -> bool:
+        """Update an existing symbol mapping."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE symbol_mappings
+            SET journal_symbol = ?, yahoo_symbol = ?, modified_at = ?
+            WHERE id = ?
+        """, (journal_symbol, yahoo_symbol, now, mapping_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def delete_symbol_mapping(self, mapping_id: int) -> bool:
+        """Delete a symbol mapping."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM symbol_mappings WHERE id = ?", (mapping_id,))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def get_symbol_mapping(self, journal_symbol: str) -> Optional[str]:
+        """Get Yahoo symbol for a journal symbol, or None if no mapping.
+        
+        Uses case-insensitive comparison for robustness.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT yahoo_symbol FROM symbol_mappings
+            WHERE LOWER(journal_symbol) = LOWER(?)
+        """, (journal_symbol,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        return row[0] if row else None
+    
+    def get_reverse_symbol_mapping(self, yahoo_symbol: str) -> Optional[str]:
+        """Get journal symbol for a Yahoo symbol (reverse lookup), or None if no mapping.
+        
+        Uses case-insensitive comparison for robustness.
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT journal_symbol FROM symbol_mappings
+            WHERE LOWER(yahoo_symbol) = LOWER(?)
+        """, (yahoo_symbol,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        return row[0] if row else None
+    
+    # ========== Auto-Fetch Symbols Methods ==========
+    
+    def get_auto_fetch_symbols(self) -> List[Dict[str, Any]]:
+        """Get all auto-fetch symbols."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM auto_fetch_symbols
+            ORDER BY symbol
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def add_auto_fetch_symbol(self, symbol: str) -> int:
+        """Add a symbol to auto-fetch list."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO auto_fetch_symbols (symbol, enabled, created_at)
+            VALUES (?, 1, ?)
+        """, (symbol, now))
+        
+        symbol_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return symbol_id
+    
+    def toggle_auto_fetch_symbol(self, symbol_id: int, enabled: bool) -> bool:
+        """Enable or disable an auto-fetch symbol."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE auto_fetch_symbols
+            SET enabled = ?
+            WHERE id = ?
+        """, (1 if enabled else 0, symbol_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def delete_auto_fetch_symbol(self, symbol_id: int) -> bool:
+        """Delete an auto-fetch symbol."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM auto_fetch_symbols WHERE id = ?", (symbol_id,))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    # ========== Calculated Columns Methods ==========
+    
+    def get_calculated_columns(self) -> List[Dict[str, Any]]:
+        """Get all calculated columns."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM calculated_columns
+            ORDER BY column_name
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        result = []
+        for row in rows:
+            data = dict(row)
+            data['config'] = json.loads(data['config_json'])
+            result.append(data)
+        
+        return result
+    
+    def add_calculated_column(self, column_name: str, calculation_type: str, config: Dict[str, Any]) -> int:
+        """Add a new calculated column."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO calculated_columns (column_name, calculation_type, config_json, created_at, modified_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (column_name, calculation_type, json.dumps(config), now, now))
+        
+        column_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return column_id
+    
+    def update_calculated_column(self, column_id: int, column_name: str, calculation_type: str, config: Dict[str, Any]) -> bool:
+        """Update an existing calculated column."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE calculated_columns
+            SET column_name = ?, calculation_type = ?, config_json = ?, modified_at = ?
+            WHERE id = ?
+        """, (column_name, calculation_type, json.dumps(config), now, column_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def delete_calculated_column(self, column_id: int) -> bool:
+        """Delete a calculated column."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM calculated_columns WHERE id = ?", (column_id,))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    # ========== Excluded Symbols Methods ==========
+    
+    def get_excluded_symbols(self) -> List[Dict[str, Any]]:
+        """Get all excluded symbols."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM excluded_symbols
+            ORDER BY symbol
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def add_excluded_symbol(self, symbol: str, reason: str = "") -> int:
+        """Add a symbol to the exclusion list."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO excluded_symbols (symbol, reason, created_at)
+            VALUES (?, ?, ?)
+        """, (symbol, reason, now))
+        
+        exclusion_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return exclusion_id
+    
+    def delete_excluded_symbol(self, exclusion_id: int) -> bool:
+        """Delete an excluded symbol."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM excluded_symbols WHERE id = ?", (exclusion_id,))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def is_symbol_excluded(self, symbol: str) -> bool:
+        """Check if a symbol is excluded."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT COUNT(*) FROM excluded_symbols
+            WHERE symbol = ?
+        """, (symbol,))
+        
+        count = cursor.fetchone()[0]
+        conn.close()
+        
+        return count > 0
+    
+    # ========== Import Warnings Methods ==========
+    
+    def add_import_warning(self, import_date: str, warning_type: str, message: str, severity: str) -> int:
+        """Add an import warning."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO import_warnings (import_date, warning_type, message, severity, created_at)
+            VALUES (?, ?, ?, ?, ?)
+        """, (import_date, warning_type, message, severity, now))
+        
+        warning_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return warning_id
+    
+    def get_import_warnings(self, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get recent import warnings."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM import_warnings
+            ORDER BY created_at DESC
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+
+
+def fetch_yahoo_price(symbol: str, date_str: str, db_instance: 'Database') -> Optional[Dict[str, Any]]:
+    """Fetch stock price from Yahoo Finance for a given symbol and date.
+    
+    Args:
+        symbol: The symbol to fetch (journal symbol, will be mapped if needed)
+        date_str: Date in YYYY-MM-DD format or "DayName YYYY-MM-DD" format
+        db_instance: Database instance for looking up symbol mappings
+    
+    Returns:
+        Dictionary with 'price', 'yahoo_symbol', 'date' on success, None on failure
+    """
+    if yf is None:
+        print(f"  ERROR: yfinance not installed")
+        return None
+    
+    try:
+        # Check for symbol mapping in database
+        yahoo_symbol = db_instance.get_symbol_mapping(symbol)
+        if not yahoo_symbol:
+            yahoo_symbol = symbol  # No mapping, use symbol as-is
+        
+        print(f"  Fetching {symbol} → {yahoo_symbol}")
+        
+        # Parse the date - handle "DayName YYYY-MM-DD" format
+        if ' ' in date_str:
+            # Extract just the YYYY-MM-DD portion
+            date_str = date_str.split(' ', 1)[1]
+        
+        # Fetch data from Yahoo Finance
+        ticker = yf.Ticker(yahoo_symbol)
+        
+        # Get historical data for the specific date
+        # Fetch a range around the date to handle market closures
+        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+        start_date = (date_obj - timedelta(days=7)).strftime('%Y-%m-%d')
+        end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        print(f"  Fetching history from {start_date} to {end_date}")
+        hist = ticker.history(start=start_date, end=end_date)
+        
+        if hist.empty:
+            print(f"  ERROR: No data returned from Yahoo Finance for {yahoo_symbol}")
+            return None
+        
+        print(f"  Got {len(hist)} days of data")
+        
+        # Try to get the exact date, or the closest previous date
+        if date_str in hist.index.strftime('%Y-%m-%d').tolist():
+            price_data = hist[hist.index.strftime('%Y-%m-%d') == date_str].iloc[0]
+            print(f"  Using exact date {date_str}")
+        else:
+            # Get the most recent price before or on the date
+            price_data = hist.iloc[-1]
+            actual_date = hist.index[-1].strftime('%Y-%m-%d')
+            print(f"  Using most recent date {actual_date} (requested {date_str})")
+        
+        price = float(price_data['Close'])
+        
+        return {
+            'price': price,
+            'yahoo_symbol': yahoo_symbol,
+            'date': date_str
+        }
+        
+    except Exception as e:
+        print(f"  ERROR fetching price for {symbol}: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
 
 
 def load_config() -> Dict[str, Any]:

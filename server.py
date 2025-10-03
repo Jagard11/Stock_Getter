@@ -4,6 +4,7 @@ FastAPI server for the Stock Tracker application.
 import os
 import csv
 import io
+import json
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
@@ -15,7 +16,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from models import Database, load_config, save_config
+from models import Database, load_config, save_config, fetch_yahoo_price
 
 
 app = FastAPI(title="Inspector - Bug Tracking System")
@@ -392,6 +393,149 @@ async def save_theme(theme: str = Form(...)):
     return {"success": True, "theme": theme}
 
 
+@app.get("/import-rules", response_class=HTMLResponse)
+async def import_rules(request: Request):
+    """Import Rules configuration page."""
+    config = load_config()
+    current_theme = db.get_setting('theme', 'default')
+    
+    # Get all import rules data
+    symbol_mappings = db.get_symbol_mappings()
+    auto_fetch_symbols = db.get_auto_fetch_symbols()
+    calculated_columns = db.get_calculated_columns()
+    excluded_symbols = db.get_excluded_symbols()
+    
+    return templates.TemplateResponse(
+        "import_rules.html",
+        {
+            "request": request,
+            "config": config,
+            "current_theme": current_theme,
+            "symbol_mappings": symbol_mappings,
+            "auto_fetch_symbols": auto_fetch_symbols,
+            "calculated_columns": calculated_columns,
+            "excluded_symbols": excluded_symbols
+        }
+    )
+
+
+@app.post("/import-rules/symbol-mapping")
+async def save_symbol_mapping(
+    journal_symbol: str = Form(...),
+    yahoo_symbol: str = Form(...),
+    mapping_id: Optional[int] = Form(None)
+):
+    """Save or update a symbol mapping."""
+    try:
+        if mapping_id:
+            # Update existing
+            success = db.update_symbol_mapping(mapping_id, journal_symbol, yahoo_symbol)
+            if not success:
+                raise HTTPException(status_code=404, detail="Mapping not found")
+        else:
+            # Create new
+            db.add_symbol_mapping(journal_symbol, yahoo_symbol)
+        
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/import-rules/symbol-mapping/{mapping_id}")
+async def delete_symbol_mapping(mapping_id: int):
+    """Delete a symbol mapping."""
+    success = db.delete_symbol_mapping(mapping_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Mapping not found")
+    return {"success": True}
+
+
+@app.post("/import-rules/auto-fetch")
+async def save_auto_fetch(symbol: str = Form(...)):
+    """Add a symbol to auto-fetch list."""
+    try:
+        db.add_auto_fetch_symbol(symbol)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/import-rules/auto-fetch/{symbol_id}/toggle")
+async def toggle_auto_fetch(symbol_id: int, enabled: bool = Form(...)):
+    """Toggle auto-fetch symbol enabled status."""
+    success = db.toggle_auto_fetch_symbol(symbol_id, enabled)
+    if not success:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+    return {"success": True}
+
+
+@app.delete("/import-rules/auto-fetch/{symbol_id}")
+async def delete_auto_fetch(symbol_id: int):
+    """Delete an auto-fetch symbol."""
+    success = db.delete_auto_fetch_symbol(symbol_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Symbol not found")
+    return {"success": True}
+
+
+@app.post("/import-rules/calculated-column")
+async def save_calculated_column(
+    column_name: str = Form(...),
+    calculation_type: str = Form(...),
+    config_json: str = Form(...),
+    column_id: Optional[int] = Form(None)
+):
+    """Save or update a calculated column."""
+    try:
+        config = json.loads(config_json)
+        
+        if column_id:
+            # Update existing
+            success = db.update_calculated_column(column_id, column_name, calculation_type, config)
+            if not success:
+                raise HTTPException(status_code=404, detail="Column not found")
+        else:
+            # Create new
+            db.add_calculated_column(column_name, calculation_type, config)
+        
+        return {"success": True}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid config JSON")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/import-rules/calculated-column/{column_id}")
+async def delete_calculated_column(column_id: int):
+    """Delete a calculated column."""
+    success = db.delete_calculated_column(column_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Column not found")
+    return {"success": True}
+
+
+@app.post("/import-rules/exclusion")
+async def save_exclusion(
+    symbol: str = Form(...),
+    reason: str = Form("")
+):
+    """Add a symbol to the exclusion list."""
+    try:
+        db.add_excluded_symbol(symbol, reason)
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.delete("/import-rules/exclusion/{exclusion_id}")
+async def delete_exclusion(exclusion_id: int):
+    """Delete a symbol exclusion."""
+    success = db.delete_excluded_symbol(exclusion_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Exclusion not found")
+    return {"success": True}
+
+
 @app.post("/journal/import")
 async def import_journal_csv(file: UploadFile = File(...)):
     """Import portfolio data from CSV file."""
@@ -430,11 +574,32 @@ async def import_holdings_csv(file: UploadFile = File(...)):
         # Import into database
         result = db.import_stock_holdings_csv(csv_data)
         
-        if 'error' in result:
-            raise HTTPException(status_code=400, detail=result['error'])
+        if not result.get('success', False):
+            error_msg = result.get('error', 'Unknown error')
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        # Build detailed result message
+        parts = []
+        parts.append(f"{result['symbols_imported']} symbols")
+        
+        if result.get('csv_symbols'):
+            parts.append(f"{len(result['csv_symbols'])} from CSV")
+        if result.get('calculated_symbols'):
+            parts.append(f"{len(result['calculated_symbols'])} calculated")
+        if result.get('auto_fetched_symbols'):
+            parts.append(f"{len(result['auto_fetched_symbols'])} auto-fetched")
+        if result.get('excluded_symbols'):
+            parts.append(f"{len(result['excluded_symbols'])} excluded")
+        
+        detail = ' (' + ', '.join(parts[1:]) + ')' if len(parts) > 1 else ''
+        
+        # Add warning count if any
+        warning_param = ""
+        if result.get('warnings'):
+            warning_param = f"&warnings={len(result['warnings'])}"
         
         return RedirectResponse(
-            url=f"/settings?holdings_imported={result['symbols_imported']}&date={result['date']}",
+            url=f"/settings?holdings_imported={result['symbols_imported']}{detail}&date={result['date']}{warning_param}",
             status_code=303
         )
     except HTTPException:
@@ -526,50 +691,20 @@ async def fetch_price(
 ):
     """Fetch stock price from Yahoo Finance for a given symbol and date.
     
-    Uses symbol override mapping from config.json if available.
+    Uses symbol mapping from database if available.
     """
     try:
-        config = load_config()
+        result = fetch_yahoo_price(symbol, date, db)
         
-        # Get symbol override from config if it exists
-        ticker_map = config.get('tickers', {})
-        yahoo_symbol = ticker_map.get(symbol, symbol)
-        
-        # Parse the date - handle "DayName YYYY-MM-DD" format
-        date_str = date
-        if ' ' in date_str:
-            # Extract just the YYYY-MM-DD portion
-            date_str = date_str.split(' ', 1)[1]
-        
-        # Fetch data from Yahoo Finance
-        ticker = yf.Ticker(yahoo_symbol)
-        
-        # Get historical data for the specific date
-        # Fetch a range around the date to handle market closures
-        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-        start_date = (date_obj - timedelta(days=7)).strftime('%Y-%m-%d')
-        end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
-        
-        hist = ticker.history(start=start_date, end=end_date)
-        
-        if hist.empty:
-            raise HTTPException(status_code=404, detail=f"No price data found for {yahoo_symbol} on {date_str}")
-        
-        # Try to get the exact date, or the closest previous date
-        if date_str in hist.index.strftime('%Y-%m-%d').tolist():
-            price_data = hist[hist.index.strftime('%Y-%m-%d') == date_str].iloc[0]
-        else:
-            # Get the most recent price before or on the date
-            price_data = hist.iloc[-1]
-        
-        price = float(price_data['Close'])
+        if result is None:
+            raise HTTPException(status_code=404, detail=f"No price data found for {symbol}")
         
         return {
             "success": True,
-            "price": price,
+            "price": result['price'],
             "symbol": symbol,
-            "yahoo_symbol": yahoo_symbol,
-            "date": date_str
+            "yahoo_symbol": result['yahoo_symbol'],
+            "date": result['date']
         }
         
     except HTTPException:

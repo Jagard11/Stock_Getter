@@ -467,6 +467,12 @@
             <button id="remove-symbol-btn" class="btn btn-danger">
                 ➖ Remove Symbol
             </button>
+            <form action="/journal/import-holdings" method="post" enctype="multipart/form-data" style="display: inline; margin: 0;">
+                <input type="file" name="file" accept=".csv" required style="display: none;" id="journal-csv-file-input" onchange="this.form.submit()">
+                <button type="button" class="btn" onclick="document.getElementById('journal-csv-file-input').click()">
+                    📊 Import CSV
+                </button>
+            </form>
             <button id="reorder-btn" class="btn btn-secondary">
                 ⇅ Reorder Columns
             </button>
