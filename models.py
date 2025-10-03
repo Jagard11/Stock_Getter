@@ -67,6 +67,7 @@ class Database:
                 date_id INTEGER NOT NULL,
                 symbol TEXT NOT NULL,
                 value REAL,
+                column_order INTEGER,
                 FOREIGN KEY (date_id) REFERENCES portfolio_dates (id),
                 UNIQUE(date_id, symbol)
             )
@@ -218,6 +219,14 @@ class Database:
         cursor = conn.cursor()
         imported_count = 0
         
+        # Get column order from first row (preserve CSV column order)
+        if csv_data:
+            first_row = csv_data[0]
+            # Get columns in order, excluding 'Date'
+            column_order = [col for col in first_row.keys() if col.lower() != 'date']
+        else:
+            column_order = []
+        
         for row in csv_data:
             try:
                 # Get date from row
@@ -237,17 +246,15 @@ class Database:
                 # Delete existing holdings for this date (for replacement)
                 cursor.execute("DELETE FROM portfolio_holdings WHERE date_id = ?", (date_id,))
                 
-                # Insert all columns except 'Date' as holdings
-                for symbol, value in row.items():
-                    if symbol.lower() == 'date':
-                        continue
-                    
-                    float_value = self._get_float_value(row, symbol)
-                    if float_value is not None:
-                        cursor.execute("""
-                            INSERT INTO portfolio_holdings (date_id, symbol, value)
-                            VALUES (?, ?, ?)
-                        """, (date_id, symbol, float_value))
+                # Insert all columns except 'Date' as holdings, preserving order
+                for order_idx, symbol in enumerate(column_order):
+                    if symbol in row:
+                        float_value = self._get_float_value(row, symbol)
+                        if float_value is not None:
+                            cursor.execute("""
+                                INSERT INTO portfolio_holdings (date_id, symbol, value, column_order)
+                                VALUES (?, ?, ?, ?)
+                            """, (date_id, symbol, float_value, order_idx))
                 
                 imported_count += 1
             except Exception as e:
@@ -276,7 +283,8 @@ class Database:
         
         Returns:
             Tuple of (data_rows, column_names) where data_rows is a list of dicts
-            with 'date' and symbol keys, and column_names is the list of unique symbols.
+            with 'date' and symbol keys, and column_names is the list of unique symbols
+            in their original CSV column order.
         """
         conn = self.get_connection()
         conn.row_factory = sqlite3.Row
@@ -286,9 +294,23 @@ class Database:
         cursor.execute("SELECT id, date FROM portfolio_dates ORDER BY date DESC")
         dates = cursor.fetchall()
         
-        # Get all unique symbols across all dates
-        cursor.execute("SELECT DISTINCT symbol FROM portfolio_holdings ORDER BY symbol")
-        symbols = [row[0] for row in cursor.fetchall()]
+        # Get all unique symbols in their original column order
+        cursor.execute("""
+            SELECT DISTINCT symbol, MIN(column_order) as min_order
+            FROM portfolio_holdings 
+            WHERE column_order IS NOT NULL
+            GROUP BY symbol
+            ORDER BY min_order
+        """)
+        symbols_with_order = cursor.fetchall()
+        
+        # If we have column_order data, use it; otherwise fall back to alphabetical
+        if symbols_with_order and symbols_with_order[0]['min_order'] is not None:
+            symbols = [row['symbol'] for row in symbols_with_order]
+        else:
+            # Fallback for old data without column_order
+            cursor.execute("SELECT DISTINCT symbol FROM portfolio_holdings ORDER BY symbol")
+            symbols = [row[0] for row in cursor.fetchall()]
         
         # Build data structure
         data_rows = []
@@ -357,6 +379,36 @@ class Database:
         conn.close()
         
         return {row['key']: row['value'] for row in rows}
+    
+    def update_column_order(self, symbol_order: List[str]) -> bool:
+        """Update the column order for all symbols.
+        
+        Args:
+            symbol_order: List of symbols in the desired order
+        
+        Returns:
+            True if successful
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Update column_order for each symbol
+            for new_order, symbol in enumerate(symbol_order):
+                cursor.execute("""
+                    UPDATE portfolio_holdings
+                    SET column_order = ?
+                    WHERE symbol = ?
+                """, (new_order, symbol))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error updating column order: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
 
 
 def load_config() -> Dict[str, Any]:

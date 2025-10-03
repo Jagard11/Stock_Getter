@@ -381,6 +381,27 @@ async def import_journal_csv(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"Error importing CSV: {str(e)}")
 
 
+@app.post("/journal/reorder-columns")
+async def reorder_columns(column_order: str = Form(...)):
+    """Update the column order for portfolio display."""
+    try:
+        # Parse comma-separated column names
+        symbols = [s.strip() for s in column_order.split(',') if s.strip()]
+        
+        # Update in database
+        success = db.update_column_order(symbols)
+        
+        if success:
+            return RedirectResponse(
+                url="/journal?reordered=1",
+                status_code=303
+            )
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update column order")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reordering columns: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

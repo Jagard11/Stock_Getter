@@ -4,9 +4,51 @@
 
 {% block extra_styles %}
 <style>
+    /* Make journal page full-width */
+    .journal-page-card {
+        width: 99vw;
+        max-width: 99vw;
+        margin-left: calc(-50vw + 50%);
+        padding-left: 0.5vw;
+        padding-right: 0.5vw;
+    }
+
     .journal-table {
-        overflow-x: auto;
+        overflow: auto;
         margin-top: 20px;
+        position: relative;
+        /* Max height: viewport height minus header, title, and padding */
+        max-height: calc(100vh - 250px);
+        width: 100%;
+        border: 2px solid var(--border-primary);
+        border-radius: 4px;
+    }
+
+    /* Enhanced scrollbar styling */
+    .journal-table::-webkit-scrollbar {
+        height: 16px;
+        width: 16px;
+        background-color: var(--bg-secondary);
+    }
+
+    .journal-table::-webkit-scrollbar-thumb {
+        background-color: var(--accent-primary);
+        border-radius: 8px;
+        border: 3px solid var(--bg-secondary);
+    }
+
+    .journal-table::-webkit-scrollbar-thumb:hover {
+        background-color: var(--accent-hover);
+    }
+
+    .journal-table::-webkit-scrollbar-corner {
+        background-color: var(--bg-secondary);
+    }
+
+    /* Firefox scrollbar styling */
+    .journal-table {
+        scrollbar-width: auto;
+        scrollbar-color: var(--accent-primary) var(--bg-secondary);
     }
 
     .journal-table table {
@@ -24,6 +66,26 @@
         cursor: pointer;
         user-select: none;
         transition: background-color 0.2s;
+    }
+
+    /* Freeze first column (Date) */
+    .journal-table th:first-child,
+    .journal-table td:first-child {
+        position: sticky;
+        left: 0;
+        background-color: var(--bg-secondary);
+        z-index: 11;
+        box-shadow: 2px 0 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Header corner (Date header) needs highest z-index */
+    .journal-table th:first-child {
+        z-index: 20;
+    }
+
+    /* Make sure frozen column has proper background on hover */
+    .journal-table tr:hover td:first-child {
+        background-color: var(--bg-secondary);
     }
 
     .journal-table th:hover {
@@ -55,7 +117,8 @@
 
     .journal-table td:first-child {
         text-align: left;
-        font-weight: 600;
+        font-weight: 700;
+        min-width: 120px;
     }
 
     .max-value {
@@ -83,9 +146,22 @@
 {% endblock %}
 
 {% block content %}
-<div class="card">
+{% if request.query_params.get('reordered') %}
+<div class="alert alert-success">
+    <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Column order updated successfully!</p>
+</div>
+{% endif %}
+
+<div class="card journal-page-card">
     {% if journal_data %}
-    <div class="journal-table">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 20px;">
+        <h2 style="margin: 0;">Portfolio Journal</h2>
+        <button id="reorder-btn" class="btn btn-secondary">
+            ⇅ Reorder Columns
+        </button>
+    </div>
+    
+    <div class="journal-table" id="main-table-scroll">
         <table id="portfolio-table">
             <thead>
                 <tr>
@@ -102,7 +178,7 @@
                     {% for col in columns %}
                     <td data-value="{{ row[col] if row[col] is not none else '' }}" {% if row[col] and row[col] == max_values[col] %}class="max-value"{% endif %}>
                         {% if row[col] is not none %}
-                        ${{ "%.2f"|format(row[col]) }}
+                        ${{ "{:,.0f}".format(row[col]|round(0, 'ceil')) }}
                         {% else %}
                         -
                         {% endif %}
@@ -132,6 +208,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const headers = table.querySelectorAll('th.sortable');
     let currentSort = { column: null, direction: 'asc' };
+    let isReorderMode = false;
 
     headers.forEach(header => {
         header.addEventListener('click', function() {
@@ -199,6 +276,146 @@ document.addEventListener('DOMContentLoaded', function() {
         // Clear and re-append sorted rows
         tbody.innerHTML = '';
         rows.forEach(row => tbody.appendChild(row));
+    }
+
+    // Column reordering functionality
+    const reorderBtn = document.getElementById('reorder-btn');
+    if (reorderBtn) {
+        reorderBtn.addEventListener('click', function() {
+            isReorderMode = !isReorderMode;
+            
+            if (isReorderMode) {
+                enterReorderMode();
+            } else {
+                exitReorderMode();
+            }
+        });
+    }
+
+    function enterReorderMode() {
+        reorderBtn.textContent = '💾 Save Order';
+        reorderBtn.classList.remove('btn-secondary');
+        reorderBtn.classList.add('btn');
+        
+        // Add visual indicators
+        const dataHeaders = Array.from(headers).filter(h => h.dataset.column !== 'date');
+        dataHeaders.forEach((header, index) => {
+            header.style.cursor = 'move';
+            header.style.backgroundColor = 'var(--accent-primary)';
+            header.style.color = 'var(--btn-text)';
+            header.style.opacity = '1';
+            header.style.fontWeight = '700';
+            header.draggable = true;
+            
+            // Add drag event listeners
+            header.addEventListener('dragstart', handleDragStart);
+            header.addEventListener('dragover', handleDragOver);
+            header.addEventListener('drop', handleDrop);
+            header.addEventListener('dragend', handleDragEnd);
+        });
+        
+        // Show instructions
+        const instructions = document.createElement('div');
+        instructions.id = 'reorder-instructions';
+        instructions.className = 'alert-info';
+        instructions.style.marginBottom = '15px';
+        instructions.innerHTML = '<p style="margin: 0; font-weight: 700; color: var(--btn-text);">📋 Drag column headers to reorder them, then click "Save Order"</p>';
+        table.parentElement.insertBefore(instructions, table);
+    }
+
+    function exitReorderMode() {
+        // Re-query headers from DOM to get current order after dragging
+        const currentHeaders = Array.from(table.querySelectorAll('th.sortable'));
+        const dataHeaders = currentHeaders.filter(h => h.dataset.column !== 'date');
+        const newOrder = dataHeaders.map(h => h.dataset.column);
+        
+        console.log('Saving column order:', newOrder.join(', '));
+        
+        // Submit to server
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/journal/reorder-columns';
+        
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'column_order';
+        input.value = newOrder.join(',');
+        
+        form.appendChild(input);
+        document.body.appendChild(form);
+        form.submit();
+    }
+
+    let draggedElement = null;
+
+    function handleDragStart(e) {
+        draggedElement = this;
+        this.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/html', this.innerHTML);
+    }
+
+    function handleDragOver(e) {
+        if (e.preventDefault) {
+            e.preventDefault();
+        }
+        e.dataTransfer.dropEffect = 'move';
+        
+        if (this !== draggedElement && this.dataset.column !== 'date') {
+            this.style.borderLeft = '4px solid var(--accent-primary)';
+        }
+        
+        return false;
+    }
+
+    function handleDrop(e) {
+        if (e.stopPropagation) {
+            e.stopPropagation();
+        }
+        
+        if (draggedElement !== this && this.dataset.column !== 'date') {
+            // Get column indices
+            const allHeaders = Array.from(table.querySelectorAll('th'));
+            const draggedIndex = allHeaders.indexOf(draggedElement);
+            const targetIndex = allHeaders.indexOf(this);
+            
+            // Swap headers
+            const thead = table.querySelector('thead tr');
+            if (draggedIndex < targetIndex) {
+                thead.insertBefore(draggedElement, this.nextSibling);
+            } else {
+                thead.insertBefore(draggedElement, this);
+            }
+            
+            // Swap all data cells in the body
+            const tbody = table.querySelector('tbody');
+            const rows = tbody.querySelectorAll('tr');
+            
+            rows.forEach(row => {
+                const cells = Array.from(row.querySelectorAll('td'));
+                const draggedCell = cells[draggedIndex];
+                const targetCell = cells[targetIndex];
+                
+                if (draggedIndex < targetIndex) {
+                    row.insertBefore(draggedCell, targetCell.nextSibling);
+                } else {
+                    row.insertBefore(draggedCell, targetCell);
+                }
+            });
+        }
+        
+        this.style.borderLeft = '';
+        
+        return false;
+    }
+
+    function handleDragEnd(e) {
+        // Reset opacity during drag
+        const dataHeaders = Array.from(headers).filter(h => h.dataset.column !== 'date');
+        dataHeaders.forEach(header => {
+            header.style.borderLeft = '';
+            header.style.opacity = '1';
+        });
     }
 });
 </script>
