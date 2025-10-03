@@ -113,12 +113,64 @@
         padding: 10px 8px;
         text-align: right;
         white-space: nowrap;
+        cursor: pointer;
+        transition: background-color 0.2s;
+    }
+
+    .journal-table td:hover:not(:first-child) {
+        background-color: var(--bg-tertiary);
+        outline: 1px solid var(--accent-primary);
     }
 
     .journal-table td:first-child {
         text-align: left;
         font-weight: 700;
         min-width: 120px;
+        cursor: default;
+    }
+
+    /* Value popup modal */
+    .value-popup {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background-color: var(--bg-secondary);
+        border: 3px solid var(--accent-primary);
+        border-radius: 8px;
+        padding: 30px 40px;
+        z-index: 1000;
+        box-shadow: 0 10px 50px rgba(0, 0, 0, 0.5);
+        min-width: 300px;
+    }
+
+    .value-popup-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(0, 0, 0, 0.7);
+        z-index: 999;
+    }
+
+    .value-popup h3 {
+        margin: 0 0 15px 0;
+        color: var(--accent-primary);
+        font-size: 1.3em;
+    }
+
+    .value-popup .exact-value {
+        font-size: 2em;
+        color: var(--text-primary);
+        font-weight: 700;
+        margin: 20px 0;
+        text-align: center;
+    }
+
+    .value-popup .close-btn {
+        margin-top: 20px;
+        width: 100%;
     }
 
     .max-value {
@@ -174,9 +226,9 @@
             <tbody>
                 {% for row in journal_data %}
                 <tr>
-                    <td data-value="{{ row.Date }}">{{ row.Date }}</td>
+                    <td data-value="{{ row.Date.split()[-1] if ' ' in row.Date else row.Date }}">{{ row.Date }}</td>
                     {% for col in columns %}
-                    <td data-value="{{ row[col] if row[col] is not none else '' }}" {% if row[col] and row[col] == max_values[col] %}class="max-value"{% endif %}>
+                    <td data-value="{{ '%.2f'|format(row[col]) if row[col] is not none else '' }}" {% if row[col] and row[col] == max_values[col] %}class="max-value"{% endif %}>
                         {% if row[col] is not none %}
                         ${{ "{:,.0f}".format(row[col]|round(0, 'ceil')) }}
                         {% else %}
@@ -209,6 +261,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const headers = table.querySelectorAll('th.sortable');
     let currentSort = { column: null, direction: 'asc' };
     let isReorderMode = false;
+
+    // Add click handlers to data cells to show exact value
+    setupCellClickHandlers();
 
     headers.forEach(header => {
         header.addEventListener('click', function() {
@@ -344,6 +399,75 @@ document.addEventListener('DOMContentLoaded', function() {
         form.appendChild(input);
         document.body.appendChild(form);
         form.submit();
+    }
+
+    function setupCellClickHandlers() {
+        const tbody = table.querySelector('tbody');
+        if (!tbody) return;
+
+        tbody.addEventListener('click', function(e) {
+            const cell = e.target.closest('td');
+            if (!cell || cell.cellIndex === 0) return; // Skip date column
+            
+            const value = cell.getAttribute('data-value');
+            if (!value || value === '') return; // Skip empty cells
+            
+            const columnHeader = table.querySelectorAll('th')[cell.cellIndex].textContent.trim();
+            const rowDate = cell.parentElement.querySelector('td:first-child').textContent.trim();
+            
+            showValuePopup(value, columnHeader, rowDate);
+        });
+    }
+
+    function showValuePopup(value, column, date) {
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'value-popup-overlay';
+        
+        // Create popup
+        const popup = document.createElement('div');
+        popup.className = 'value-popup';
+        
+        console.log('Raw value from data-value:', value);
+        const floatValue = parseFloat(value);
+        console.log('Parsed float value:', floatValue);
+        
+        // Format with exactly 2 decimal places
+        const formattedValue = floatValue.toLocaleString('en-US', { 
+            minimumFractionDigits: 2, 
+            maximumFractionDigits: 2 
+        });
+        console.log('Formatted value:', formattedValue);
+        
+        popup.innerHTML = `
+            <h3>${column}</h3>
+            <p style="color: var(--text-secondary); margin: 0;">Date: ${date}</p>
+            <div class="exact-value">$${formattedValue}</div>
+            <p style="color: var(--text-muted); font-size: 0.9em; margin-top: 10px;">Exact Value (Debug: ${value})</p>
+            <button class="btn close-btn">Close</button>
+        `;
+        
+        document.body.appendChild(overlay);
+        document.body.appendChild(popup);
+        
+        // Close handlers
+        const closeBtn = popup.querySelector('.close-btn');
+        const closePopup = () => {
+            overlay.remove();
+            popup.remove();
+        };
+        
+        closeBtn.addEventListener('click', closePopup);
+        overlay.addEventListener('click', closePopup);
+        
+        // Close on Escape key
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape') {
+                closePopup();
+                document.removeEventListener('keydown', escapeHandler);
+            }
+        };
+        document.addEventListener('keydown', escapeHandler);
     }
 
     let draggedElement = null;
