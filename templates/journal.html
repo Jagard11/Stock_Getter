@@ -130,7 +130,7 @@
         text-align: left;
         font-weight: 700;
         min-width: 120px;
-        cursor: default;
+        cursor: pointer;
     }
 
     /* Value popup modal */
@@ -252,6 +252,27 @@
     .value-popup .cancel-btn:hover {
         background-color: var(--bg-secondary);
         border-color: var(--text-muted);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .value-popup .delete-btn {
+        background-color: #dc3545;
+        color: white;
+        border: 2px solid #dc3545;
+        padding: 12px 24px;
+        border-radius: 4px;
+        font-size: 1em;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        width: 100%;
+        margin-top: 20px;
+    }
+
+    .value-popup .delete-btn:hover {
+        background-color: #c82333;
+        border-color: #c82333;
         transform: translateY(-1px);
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     }
@@ -496,10 +517,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
         tbody.addEventListener('click', function(e) {
             const cell = e.target.closest('td');
-            if (!cell || cell.cellIndex === 0) return; // Skip date column
+            if (!cell) return;
             
-            const value = cell.getAttribute('data-value');
-            if (!value || value === '') return; // Skip empty cells
+            // Handle date column clicks
+            if (cell.cellIndex === 0) {
+                const dateValue = cell.textContent.trim();
+                showDatePopup(dateValue);
+                return;
+            }
+            
+            // Handle value column clicks
+            const value = cell.getAttribute('data-value') || '0.00';
             
             const columnHeader = table.querySelectorAll('th')[cell.cellIndex].textContent.trim();
             const rowDate = cell.parentElement.querySelector('td:first-child').textContent.trim();
@@ -528,7 +556,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <h3 style="text-align: center;">${column}</h3>
             <p style="color: var(--text-secondary); margin: 0; text-align: center;">${date}</p>
             <div class="exact-value" id="value-display" style="text-align: center;">$${formattedValue}</div>
-            <p class="edit-hint">Double-click value to edit</p>
+            <p class="edit-hint">Double-click to edit • Ctrl+C to copy</p>
             <button class="btn close-btn" id="close-btn">Close</button>
         `;
         
@@ -630,6 +658,212 @@ document.addEventListener('DOMContentLoaded', function() {
         closeBtn.addEventListener('click', closePopup);
         overlay.addEventListener('click', closePopup);
         
+        // Keyboard handlers (Escape to close, Ctrl+C to copy)
+        const keyHandler = (e) => {
+            // Close on Escape (only when not editing)
+            if (e.key === 'Escape' && !isEditing) {
+                closePopup();
+                document.removeEventListener('keydown', keyHandler);
+            }
+            
+            // Copy value on Ctrl+C or Cmd+C (only when not editing)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'c' && !isEditing) {
+                e.preventDefault();
+                
+                // Copy the exact value to clipboard
+                const textToCopy = formattedValue;
+                
+                // Use modern Clipboard API if available
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(textToCopy).then(() => {
+                        // Show brief feedback
+                        const originalText = valueDisplay.textContent;
+                        valueDisplay.textContent = 'Copied!';
+                        valueDisplay.style.color = 'var(--accent-primary)';
+                        
+                        setTimeout(() => {
+                            valueDisplay.textContent = originalText;
+                            valueDisplay.style.color = 'var(--text-primary)';
+                        }, 800);
+                    }).catch(err => {
+                        console.error('Failed to copy:', err);
+                    });
+                } else {
+                    // Fallback for older browsers
+                    const textarea = document.createElement('textarea');
+                    textarea.value = textToCopy;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    try {
+                        document.execCommand('copy');
+                        // Show brief feedback
+                        const originalText = valueDisplay.textContent;
+                        valueDisplay.textContent = 'Copied!';
+                        valueDisplay.style.color = 'var(--accent-primary)';
+                        
+                        setTimeout(() => {
+                            valueDisplay.textContent = originalText;
+                            valueDisplay.style.color = 'var(--text-primary)';
+                        }, 800);
+                    } catch (err) {
+                        console.error('Failed to copy:', err);
+                    }
+                    document.body.removeChild(textarea);
+                }
+            }
+        };
+        document.addEventListener('keydown', keyHandler);
+    }
+
+
+    function showDatePopup(date) {
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'value-popup-overlay';
+        
+        // Create popup
+        const popup = document.createElement('div');
+        popup.className = 'value-popup';
+        
+        let isEditing = false;
+        
+        popup.innerHTML = `
+            <h3 style="text-align: center;">Date Entry</h3>
+            <div class="exact-value" id="date-display" style="text-align: center;">${date}</div>
+            <p class="edit-hint">Double-click date to edit</p>
+            <button class="btn close-btn" id="close-btn">Close</button>
+        `;
+        
+        document.body.appendChild(overlay);
+        document.body.appendChild(popup);
+        
+        const dateDisplay = popup.querySelector('#date-display');
+        const closeBtn = popup.querySelector('#close-btn');
+        const editHint = popup.querySelector('.edit-hint');
+        
+        // Double-click to edit date
+        dateDisplay.addEventListener('dblclick', function() {
+            if (isEditing) return;
+            isEditing = true;
+            
+            // Create input field
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = date;
+            input.className = 'edit-input';
+            
+            // Replace display with input
+            dateDisplay.replaceWith(input);
+            input.focus();
+            if (editHint) editHint.style.display = 'none';
+            
+            // Change close button to save/cancel buttons
+            // Add delete button and save/cancel buttons
+            const buttonGroup = document.createElement('div');
+            buttonGroup.style.marginTop = '40px';
+            buttonGroup.innerHTML = `
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <button class="save-btn" id="save-btn">Save</button>
+                    <button class="cancel-btn" id="cancel-btn">Cancel</button>
+                </div>
+                <button class="delete-btn" id="delete-btn">🗑️ Delete Entry</button>
+            `;
+            closeBtn.replaceWith(buttonGroup);
+            
+            const saveBtn = buttonGroup.querySelector('#save-btn');
+            const cancelBtn = buttonGroup.querySelector('#cancel-btn');
+            const deleteBtn = buttonGroup.querySelector('#delete-btn');
+
+            const saveEdit = async () => {
+                const newDate = input.value.trim();
+                
+                try {
+                    const formData = new FormData();
+                    formData.append('old_date', date);
+                    formData.append('new_date', newDate);
+                    
+                    const response = await fetch('/journal/update-date', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to update date');
+                    }
+                    
+                    // Reload page to show updated date
+                    window.location.reload();
+                    
+                } catch (error) {
+                    console.error('Error saving date:', error);
+                    alert('Failed to save date. Please try again.');
+                    isEditing = false;
+                    input.replaceWith(dateDisplay);
+                    buttonGroup.replaceWith(closeBtn);
+                }
+            };
+            
+            const cancelEdit = () => {
+                isEditing = false;
+                input.replaceWith(dateDisplay);
+                buttonGroup.replaceWith(closeBtn);
+                if (editHint) editHint.style.display = '';
+            };
+            
+            // Event listeners
+            saveBtn.addEventListener('click', saveEdit);
+            cancelBtn.addEventListener('click', cancelEdit);
+            
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveEdit();
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    cancelEdit();
+                }
+            });
+            
+            // Delete button handler
+            deleteBtn.addEventListener('click', async function() {
+                const confirmed = confirm(`Are you sure you want to delete the entry for ${date}? This will remove all data for this date and cannot be undone.`);
+                
+                if (!confirmed) return;
+                
+                try {
+                    const formData = new FormData();
+                    formData.append('date', date);
+                    
+                    const response = await fetch('/journal/delete-date', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to delete date');
+                    }
+                    
+                    // Reload page to show updated journal
+                    window.location.reload();
+                    
+                } catch (error) {
+                    console.error('Error deleting date:', error);
+                    alert('Failed to delete date entry. Please try again.');
+                }
+            });
+        });
+        
+        
+        const closePopup = () => {
+            overlay.remove();
+            popup.remove();
+        };
+        
+        closeBtn.addEventListener('click', closePopup);
+        overlay.addEventListener('click', closePopup);
+        
         // Close on Escape key (only when not editing)
         const escapeHandler = (e) => {
             if (e.key === 'Escape' && !isEditing) {
@@ -639,7 +873,6 @@ document.addEventListener('DOMContentLoaded', function() {
         };
         document.addEventListener('keydown', escapeHandler);
     }
-
 
     let draggedElement = null;
 

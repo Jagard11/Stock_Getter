@@ -454,6 +454,37 @@ async def update_cell(
         raise HTTPException(status_code=400, detail=f"Error updating cell: {str(e)}")
 
 
+@app.post("/journal/update-date")
+async def update_date(
+    old_date: str = Form(...),
+    new_date: str = Form(...)
+):
+    """Update a date in the portfolio."""
+    try:
+        success = db.update_portfolio_date(old_date, new_date)
+        
+        if success:
+            return {"success": True, "date": new_date}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to update date")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error updating date: {str(e)}")
+
+
+@app.post("/journal/delete-date")
+async def delete_date(date: str = Form(...)):
+    """Delete a date and all its associated portfolio data."""
+    try:
+        success = db.delete_portfolio_date(date)
+        
+        if success:
+            return {"success": True}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to delete date")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error deleting date: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

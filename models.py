@@ -532,6 +532,80 @@ class Database:
         finally:
             conn.close()
     
+    def update_portfolio_date(self, old_date: str, new_date: str) -> bool:
+        """Update a date in the portfolio.
+        
+        Args:
+            old_date: The current date string
+            new_date: The new date string
+        
+        Returns:
+            True if successful
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Update the date
+            cursor.execute("""
+                UPDATE portfolio_dates
+                SET date = ?
+                WHERE date = ?
+            """, (new_date, old_date))
+            
+            success = cursor.rowcount > 0
+            conn.commit()
+            return success
+        except Exception as e:
+            print(f"Error updating portfolio date: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
+    def delete_portfolio_date(self, date: str) -> bool:
+        """Delete a date and all its associated portfolio holdings.
+        
+        Args:
+            date: The date string to delete
+        
+        Returns:
+            True if successful
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Get the date_id
+            cursor.execute("SELECT id FROM portfolio_dates WHERE date = ?", (date,))
+            row = cursor.fetchone()
+            
+            if not row:
+                return False
+            
+            date_id = row[0]
+            
+            # Delete all holdings for this date
+            cursor.execute("""
+                DELETE FROM portfolio_holdings
+                WHERE date_id = ?
+            """, (date_id,))
+            
+            # Delete the date itself
+            cursor.execute("""
+                DELETE FROM portfolio_dates
+                WHERE id = ?
+            """, (date_id,))
+            
+            conn.commit()
+            return True
+        except Exception as e:
+            print(f"Error deleting portfolio date: {e}")
+            conn.rollback()
+            return False
+        finally:
+            conn.close()
+    
     def import_stock_holdings_csv(self, csv_data: List[List[str]]) -> Dict[str, Any]:
         """Import stock holdings from CSV with account-based structure.
         
