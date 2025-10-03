@@ -135,7 +135,18 @@
             <div class="chart-header">
                 <h3>{{ symbol }}</h3>
                 <div class="chart-info">
-                    <span>Data points: {{ data|length }}</span>
+                    {% if data and data|length > 0 %}
+                    {% set initial_value = data[0].value %}
+                    {% set current_value = data[-1].value %}
+                    {% set gain_loss = current_value - initial_value %}
+                    {% set percent_change = ((current_value - initial_value) / initial_value * 100) if initial_value != 0 else 0 %}
+                    <span style="{% if gain_loss >= 0 %}color: var(--success-bg);{% else %}color: var(--error-bg);{% endif %} font-weight: 700;">
+                        {% if gain_loss >= 0 %}+{% endif %}${{ "{:,.2f}".format(gain_loss) }}
+                        ({% if percent_change >= 0 %}+{% endif %}{{ "{:.2f}".format(percent_change) }}%)
+                    </span>
+                    <span style="margin-left: 20px;">•</span>
+                    {% endif %}
+                    <span style="margin-left: 10px;">Data points: {{ data|length }}</span>
                     {% if data %}
                     <span style="margin-left: 20px;">
                         {{ data[0].date }} to {{ data[-1].date }}

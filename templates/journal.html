@@ -456,31 +456,6 @@
 {% endblock %}
 
 {% block content %}
-{% if request.query_params.get('reordered') %}
-<div class="alert alert-success">
-    <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Column order updated successfully!</p>
-</div>
-{% endif %}
-
-{% if request.query_params.get('symbol_added') %}
-<div class="alert alert-success">
-    <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Symbol added successfully!</p>
-</div>
-{% endif %}
-
-{% if request.query_params.get('symbol_removed') %}
-<div class="alert alert-success">
-    <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✓ Symbol {{ request.query_params.get('symbol_removed') }} removed successfully!</p>
-</div>
-{% endif %}
-
-{% if request.query_params.get('error') %}
-<div class="alert alert-error">
-    <p style="margin: 0; font-weight: 700; color: var(--btn-text);">✗ {{ request.query_params.get('error') }}</p>
-</div>
-{% endif %}
-
-
 <div class="card journal-page-card">
     {% if journal_data %}
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 20px;">

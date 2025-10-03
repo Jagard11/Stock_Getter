@@ -69,18 +69,6 @@
     <p style="color: var(--text-secondary); margin-top: 10px;">Configure your Stock Tracker application settings and data management.</p>
 </div>
 
-{% if request.query_params.get('imported') %}
-<div class="card alert-success">
-    <p style="margin: 0; font-weight: 700;">✓ Successfully imported {{ request.query_params.get('imported') }} rows from CSV!</p>
-</div>
-{% endif %}
-
-{% if request.query_params.get('holdings_imported') %}
-<div class="card alert-success">
-    <p style="margin: 0; font-weight: 700;">✓ Successfully imported {{ request.query_params.get('holdings_imported') }} stock symbols for {{ request.query_params.get('date') }}!</p>
-</div>
-{% endif %}
-
 <div class="card">
     <div class="settings-section">
         <h3>📁 Data Import</h3>

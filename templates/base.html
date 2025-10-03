@@ -496,7 +496,83 @@
         }
 
         *:focus-visible {
-            outline: 3px solid var(--focus-outline);
+
+    /* Toast Notification Overlay */
+
+    /* Toast Notification System - High Visibility */
+    .toast-notification {
+        position: fixed !important;
+        top: 20px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        z-index: 999999 !important;
+        min-width: 500px;
+        max-width: 700px;
+        padding: 25px 40px;
+        border-radius: 12px;
+        font-size: 1.3em;
+        font-weight: 700;
+        text-align: center;
+        box-shadow: 0 15px 60px rgba(0, 0, 0, 0.9), 
+                    0 0 0 4px rgba(255, 255, 255, 0.2);
+        animation: slideDown 0.4s ease-out, fadeOut 0.5s ease-in 5.5s;
+        animation-fill-mode: forwards;
+        backdrop-filter: blur(10px);
+    }
+
+    /* Success/Addition messages - Bright Green */
+    .toast-notification.success {
+        background: linear-gradient(135deg, #00C853 0%, #00E676 100%);
+        border: 4px solid #FFFFFF;
+        color: #FFFFFF;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Error messages - Bright Red */
+    .toast-notification.error {
+        background: linear-gradient(135deg, #D32F2F 0%, #F44336 100%);
+        border: 4px solid #FFFFFF;
+        color: #FFFFFF;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Removal messages - Orange/Warning */
+    .toast-notification.removal {
+        background: linear-gradient(135deg, #FF6F00 0%, #FF9800 100%);
+        border: 4px solid #FFFFFF;
+        color: #FFFFFF;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Info messages - Bright Blue */
+    .toast-notification.info {
+        background: linear-gradient(135deg, #1976D2 0%, #2196F3 100%);
+        border: 4px solid #FFFFFF;
+        color: #FFFFFF;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    }
+
+    @keyframes slideDown {
+        from {
+            transform: translateX(-50%) translateY(-150px);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+    }
+
+    @keyframes fadeOut {
+        from {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        to {
+            opacity: 0;
+            transform: translateX(-50%) translateY(-50px);
+        }
+    }
             outline-offset: 2px;
         /* Windows High Contrast Mode support */
         @media (forced-colors: active) {
@@ -507,6 +583,8 @@
             
             /* Ensure focus indicators are always visible */
             *:focus, *:focus-visible {
+
+    /* Toast Notification Overlay */
                 outline: 3px solid Highlight !important;
                 outline-offset: 2px !important;
             }
@@ -563,7 +641,7 @@
     <header>
         <div class="container">
             <div class="header-content">
-                <h1>Stock Tracker</h1>
+                <h1><a href="/" style="color: var(--accent-primary); text-decoration: none; cursor: pointer;">Stock Tracker</a></h1>
                 <nav>
                     <a href="/">Home</a>
                     <a href="/journal">Journal</a>
@@ -580,5 +658,94 @@
 
     {% block extra_scripts %}{% endblock %}
 </body>
+
+    <script>
+        // Toast notification system
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = 'toast-notification ' + type;
+            toast.textContent = message;
+            
+            // Force inline styles for positioning and visibility
+            toast.style.position = 'fixed';
+            toast.style.top = '20px';
+            toast.style.left = '50%';
+            toast.style.transform = 'translateX(-50%)';
+            toast.style.zIndex = '999999';
+            toast.style.minWidth = '500px';
+            toast.style.maxWidth = '700px';
+            toast.style.padding = '25px 40px';
+            toast.style.borderRadius = '12px';
+            toast.style.fontSize = '1.3em';
+            toast.style.fontWeight = '700';
+            toast.style.textAlign = 'center';
+            toast.style.boxShadow = '0 15px 60px rgba(0, 0, 0, 0.9), 0 0 0 4px rgba(255, 255, 255, 0.2)';
+            toast.style.animation = 'slideDown 0.4s ease-out, fadeOut 0.5s ease-in 5.5s';
+            toast.style.animationFillMode = 'forwards';
+            
+            // Apply type-specific colors with inline styles for guaranteed visibility
+            if (type === 'success') {
+                toast.style.background = 'linear-gradient(135deg, #00C853 0%, #00E676 100%)';
+                toast.style.border = '4px solid #FFFFFF';
+                toast.style.color = '#FFFFFF';
+                toast.style.textShadow = '0 2px 4px rgba(0, 0, 0, 0.3)';
+            } else if (type === 'error') {
+                toast.style.background = 'linear-gradient(135deg, #D32F2F 0%, #F44336 100%)';
+                toast.style.border = '4px solid #FFFFFF';
+                toast.style.color = '#FFFFFF';
+                toast.style.textShadow = '0 2px 4px rgba(0, 0, 0, 0.3)';
+            } else if (type === 'removal') {
+                toast.style.background = 'linear-gradient(135deg, #FF6F00 0%, #FF9800 100%)';
+                toast.style.border = '4px solid #FFFFFF';
+                toast.style.color = '#FFFFFF';
+                toast.style.textShadow = '0 2px 4px rgba(0, 0, 0, 0.3)';
+            } else if (type === 'info') {
+                toast.style.background = 'linear-gradient(135deg, #1976D2 0%, #2196F3 100%)';
+                toast.style.border = '4px solid #FFFFFF';
+                toast.style.color = '#FFFFFF';
+                toast.style.textShadow = '0 2px 4px rgba(0, 0, 0, 0.3)';
+            }
+            
+            document.body.appendChild(toast);
+            
+            // Remove after animation completes (6 seconds)
+            setTimeout(() => {
+                toast.remove();
+            }, 6000);
+        }
+
+        // Check for query parameters and show notifications
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            
+            // Success messages
+            if (urlParams.has('reordered')) {
+                showToast('✓ Column order updated successfully!', 'success');
+            }
+            if (urlParams.has('symbol_added')) {
+                showToast('✓ Symbol added successfully!', 'success');
+            }
+            if (urlParams.has('symbol_removed')) {
+                showToast('🗑️ Symbol ' + urlParams.get('symbol_removed') + ' removed successfully!', 'removal');
+            }
+            if (urlParams.has('imported')) {
+                showToast('✓ Imported ' + urlParams.get('imported') + ' records!', 'success');
+            }
+            if (urlParams.has('holdings_imported')) {
+                showToast('✓ Imported ' + urlParams.get('holdings_imported') + ' symbols!', 'success');
+            }
+            
+            // Error messages
+            if (urlParams.has('error')) {
+                showToast('✗ ' + urlParams.get('error'), 'error');
+            }
+            
+            // Clean URL after showing notification
+            if (urlParams.toString()) {
+                const cleanUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, cleanUrl);
+            }
+        });
+    </script>
 </html>
 
