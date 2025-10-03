@@ -4,6 +4,10 @@ REM Start the Inspector web server on Windows
 REM Change to the script's directory
 cd /d "%~dp0"
 
+REM Pull latest updates from git
+echo Checking for updates...
+git pull
+
 REM Check if virtual environment exists, if not create it
 IF NOT EXIST "venv" (
     echo Creating virtual environment...

@@ -3,6 +3,10 @@
 
 cd "$(dirname "$0")"
 
+# Pull latest updates from git
+echo "Checking for updates..."
+git pull
+
 # Activate virtual environment if it exists
 if [ -d "venv" ]; then
     source venv/bin/activate
