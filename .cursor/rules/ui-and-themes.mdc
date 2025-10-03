@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+All UI elements in this app need to be formatted so they are properly manipulated by the accessability themes. in particular, buttons, font, and background colors always need to be consistently formatted by the themes. 
