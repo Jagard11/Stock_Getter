@@ -11,4 +11,5 @@ Inspector/
 .~lock.*
 
 # Database files
-# inspector.db
+*.db
+inspector.db
