@@ -3,7 +3,7 @@ Database models for the Inspector bug tracking system.
 """
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
@@ -234,6 +234,9 @@ class Database:
                 if not date:
                     continue
                 
+                # Convert Excel serial dates to readable format
+                date = self._convert_excel_date(date)
+                
                 # Insert or get date record
                 cursor.execute("""
                     INSERT OR IGNORE INTO portfolio_dates (date, imported_at)
@@ -278,6 +281,34 @@ class Database:
         except (ValueError, TypeError):
             return None
     
+    def _convert_excel_date(self, date_value: str) -> str:
+        """Convert Excel serial date number to formatted date string.
+        
+        Args:
+            date_value: Either an Excel serial number (e.g., "45931") or a date string
+        
+        Returns:
+            Formatted date string in "DayName YYYY-MM-DD" format
+        """
+        # Try to detect if it's an Excel serial number (typically 5 digits for recent dates)
+        try:
+            # If it's a number-like string, try to convert from Excel serial
+            cleaned_value = date_value.strip()
+            if cleaned_value.replace('.', '').replace('-', '').isdigit():
+                # Check if it looks like an Excel serial (positive integer, typically 40000-50000 for 2010-2040)
+                serial = float(cleaned_value)
+                if 40000 <= serial <= 60000:  # Reasonable range for Excel dates 2009-2064
+                    # Excel epoch is December 30, 1899
+                    excel_epoch = datetime(1899, 12, 30)
+                    converted_date = excel_epoch + timedelta(days=serial)
+                    # Format as "DayName YYYY-MM-DD"
+                    return converted_date.strftime("%a %Y-%m-%d")
+        except (ValueError, AttributeError):
+            pass
+        
+        # If it's already in a good format or conversion failed, return as-is
+        return date_value
+    
     def get_portfolio_data(self) -> tuple[List[Dict[str, Any]], List[str]]:
         """Get all portfolio data ordered by date descending.
         
@@ -290,8 +321,13 @@ class Database:
         conn.row_factory = sqlite3.Row
         cursor = conn.cursor()
         
-        # Get all dates
-        cursor.execute("SELECT id, date FROM portfolio_dates ORDER BY date DESC")
+        # Get all dates - sort by the YYYY-MM-DD portion (after day name and space)
+        # Date format is "Wed 2025-10-01", so we extract from position 5 onwards for sorting
+        cursor.execute("""
+            SELECT id, date 
+            FROM portfolio_dates 
+            ORDER BY substr(date, instr(date, ' ') + 1) DESC
+        """)
         dates = cursor.fetchall()
         
         # Get all unique symbols in their original column order
@@ -407,6 +443,44 @@ class Database:
             print(f"Error updating column order: {e}")
             conn.rollback()
             return False
+        finally:
+            conn.close()
+    
+    def fix_excel_serial_dates(self) -> int:
+        """Convert existing Excel serial date numbers to readable format.
+        
+        Returns:
+            Number of dates converted
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        converted_count = 0
+        
+        try:
+            # Get all dates
+            cursor.execute("SELECT id, date FROM portfolio_dates")
+            dates = cursor.fetchall()
+            
+            for date_id, date_str in dates:
+                # Try to convert if it's an Excel serial
+                converted = self._convert_excel_date(date_str)
+                
+                # If conversion happened (result is different), update the database
+                if converted != date_str:
+                    cursor.execute("""
+                        UPDATE portfolio_dates
+                        SET date = ?
+                        WHERE id = ?
+                    """, (converted, date_id))
+                    converted_count += 1
+                    print(f"Converted: {date_str} -> {converted}")
+            
+            conn.commit()
+            return converted_count
+        except Exception as e:
+            print(f"Error converting dates: {e}")
+            conn.rollback()
+            return 0
         finally:
             conn.close()
 

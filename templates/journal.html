@@ -228,9 +228,13 @@
                 <tr>
                     <td data-value="{{ row.Date.split()[-1] if ' ' in row.Date else row.Date }}">{{ row.Date }}</td>
                     {% for col in columns %}
-                    <td data-value="{{ '%.2f'|format(row[col]) if row[col] is not none else '' }}" {% if row[col] and row[col] == max_values[col] %}class="max-value"{% endif %}>
-                        {% if row[col] is not none %}
-                        ${{ "{:,.0f}".format(row[col]|round(0, 'ceil')) }}
+                    {% set cell_value = row[col] %}
+                    {% set is_max = cell_value is not none and cell_value == max_values[col] %}
+                    <td data-value="{{ '%.2f'|format(cell_value) if cell_value is not none else '' }}" 
+                        data-raw-value="{{ cell_value if cell_value is not none else '' }}"
+                        {% if is_max %}class="max-value"{% endif %}>
+                        {% if cell_value is not none %}
+                        ${{ "{:,.0f}".format(cell_value|round(0, 'ceil')) }}
                         {% else %}
                         -
                         {% endif %}
@@ -440,10 +444,9 @@ document.addEventListener('DOMContentLoaded', function() {
         console.log('Formatted value:', formattedValue);
         
         popup.innerHTML = `
-            <h3>${column}</h3>
-            <p style="color: var(--text-secondary); margin: 0;">Date: ${date}</p>
-            <div class="exact-value">$${formattedValue}</div>
-            <p style="color: var(--text-muted); font-size: 0.9em; margin-top: 10px;">Exact Value (Debug: ${value})</p>
+            <h3 style="text-align: center;">${column}</h3>
+            <p style="color: var(--text-secondary); margin: 0; text-align: center;">${date}</p>
+            <div class="exact-value" style="text-align: center;">$${formattedValue}</div>
             <button class="btn close-btn">Close</button>
         `;
         
