@@ -816,7 +816,7 @@ def load_config() -> Dict[str, Any]:
     """Load the inspector configuration."""
     config_path = Path("Inspector/inspector_config.json")
     if config_path.exists():
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding='utf-8') as f:
             return json.load(f)
     return {}
 
@@ -825,6 +825,6 @@ def save_config(config: Dict[str, Any]):
     """Save the inspector configuration."""
     config_path = Path("Inspector/inspector_config.json")
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(config_path, 'w') as f:
+    with open(config_path, 'w', encoding='utf-8') as f:
         json.dump(config, f, indent=2)
 

@@ -77,7 +77,7 @@ async def home(request: Request):
     readme_content = ""
     readme_path = Path("README.md")
     if readme_path.exists():
-        readme_content = readme_path.read_text()
+        readme_content = readme_path.read_text(encoding='utf-8')
     
     return templates.TemplateResponse(
         "index.html",
