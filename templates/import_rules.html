@@ -424,9 +424,9 @@
     <div class="rules-section">
         <h3>🔄 Backfill Historical Data</h3>
         <div class="section-description">
-            <strong>Purpose:</strong> Populate historical closing prices for a symbol going back to a specific date. This is a one-time operation useful when you want to start tracking a new symbol with its complete price history.
+            <strong>Purpose:</strong> Populate historical closing prices for a symbol over a specified date range. Use this when you want to start tracking a new symbol with its complete price history, or to update data for specific periods.
             <br><br>
-            <strong style="color: var(--accent-primary);">Note:</strong> This will fetch closing prices for all valid trading days between the specified start date and the most recent trading day. Existing data will not be overwritten.
+            <strong style="color: var(--accent-primary);">Data Modes:</strong> Choose <strong>Preserve</strong> to only fill missing dates (safe), or <strong>Overwrite</strong> to replace all data in the range (use with caution).
         </div>
         
         <form id="backfillForm" onsubmit="submitBackfill(event)" style="margin-top: 20px;">
@@ -437,11 +437,38 @@
                     If a symbol mapping exists, it will be used automatically
                 </small>
             </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div class="form-group">
+                    <label for="backfillStartDate">Earliest Date</label>
+                    <input type="date" id="backfillStartDate" required>
+                    <small style="color: var(--text-muted); display: block; margin-top: 5px;">
+                        Start of date range
+                    </small>
+                </div>
+                <div class="form-group">
+                    <label for="backfillEndDate">Latest Date</label>
+                    <input type="date" id="backfillEndDate" required>
+                    <small style="color: var(--text-muted); display: block; margin-top: 5px;">
+                        End of date range (defaults to today)
+                    </small>
+                </div>
+            </div>
             <div class="form-group">
-                <label for="backfillStartDate">Start Date</label>
-                <input type="date" id="backfillStartDate" required>
-                <small style="color: var(--text-muted); display: block; margin-top: 5px;">
-                    Historical data will be fetched from this date to the most recent trading day
+                <label style="display: block; margin-bottom: 10px; font-weight: 600;">Data Handling</label>
+                <div style="display: flex; gap: 20px;">
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="radio" name="overwriteMode" value="preserve" checked style="margin-right: 8px; cursor: pointer;">
+                        <span style="font-weight: 600;">Preserve</span>
+                        <span style="color: var(--text-muted); margin-left: 8px; font-size: 0.9em;">- Keep existing data</span>
+                    </label>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="radio" name="overwriteMode" value="overwrite" style="margin-right: 8px; cursor: pointer;">
+                        <span style="font-weight: 600; color: var(--warning-bg);">Overwrite</span>
+                        <span style="color: var(--text-muted); margin-left: 8px; font-size: 0.9em;">- Replace existing data</span>
+                    </label>
+                </div>
+                <small style="color: var(--text-muted); display: block; margin-top: 8px;">
+                    <strong>Preserve:</strong> Only fills in missing dates. <strong>Overwrite:</strong> Replaces all data in date range.
                 </small>
             </div>
             <div class="btn-group">
@@ -1013,20 +1040,35 @@
     }
 
     // Backfill Historical Data Functions
+    // Set default end date to today on page load
+    document.addEventListener('DOMContentLoaded', function() {
+        const endDateInput = document.getElementById('backfillEndDate');
+        if (endDateInput && !endDateInput.value) {
+            const today = new Date().toISOString().split('T')[0];
+            endDateInput.value = today;
+        }
+    });
+    
     async function submitBackfill(event) {
         event.preventDefault();
         
         const symbol = document.getElementById('backfillSymbol').value.toUpperCase();
         const startDate = document.getElementById('backfillStartDate').value;
+        const endDate = document.getElementById('backfillEndDate').value;
+        const overwriteMode = document.querySelector('input[name="overwriteMode"]:checked').value;
         
         // Disable form and show progress
         document.getElementById('backfillBtn').disabled = true;
         document.getElementById('backfillProgress').style.display = 'block';
-        document.getElementById('backfillStatus').textContent = `Fetching historical data for ${symbol} from ${startDate}...`;
+        
+        const modeText = overwriteMode === 'overwrite' ? 'overwriting existing data' : 'preserving existing data';
+        document.getElementById('backfillStatus').textContent = `Fetching historical data for ${symbol} from ${startDate} to ${endDate} (${modeText})...`;
         
         const formData = new FormData();
         formData.append('symbol', symbol);
         formData.append('start_date', startDate);
+        formData.append('end_date', endDate);
+        formData.append('overwrite', overwriteMode === 'overwrite');
         
         try {
             const response = await fetch('/import-rules/backfill', {
@@ -1037,16 +1079,27 @@
             const data = await response.json();
             
             if (response.ok) {
-                document.getElementById('backfillStatus').innerHTML = `
+                let statusHtml = `
                     <strong style="color: var(--success-bg);">✓ Success!</strong><br>
                     Imported ${data.days_imported} trading days for ${symbol}<br>
-                    Date range: ${data.start_date} to ${data.end_date}
+                    Date range: ${data.start_date} to ${data.end_date}<br>
                 `;
+                
+                if (data.overwritten_count > 0) {
+                    statusHtml += `<span style="color: var(--warning-bg);">⚠ Overwrote ${data.overwritten_count} existing values</span>`;
+                } else if (overwriteMode === 'preserve') {
+                    statusHtml += `<span style="color: var(--text-muted);">Preserved all existing data</span>`;
+                }
+                
+                document.getElementById('backfillStatus').innerHTML = statusHtml;
                 showToast(`✓ Backfilled ${data.days_imported} days for ${symbol}`, 'success');
                 
                 // Reset form after 3 seconds
                 setTimeout(() => {
                     document.getElementById('backfillForm').reset();
+                    // Re-set default end date
+                    const today = new Date().toISOString().split('T')[0];
+                    document.getElementById('backfillEndDate').value = today;
                     document.getElementById('backfillProgress').style.display = 'none';
                     document.getElementById('backfillBtn').disabled = false;
                 }, 3000);

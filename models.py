@@ -175,6 +175,37 @@ class Database:
                     )
                 """)
         
+        # Create dividend_payments table - Track dividend payments for symbols
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dividend_payments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL,
+                payment_date TEXT NOT NULL,
+                amount_paid REAL NOT NULL,
+                shares_held REAL,
+                dividend_per_share REAL,
+                account_number TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                UNIQUE(symbol, payment_date)
+            )
+        """)
+        
+        # Create dividend_tracking table - Track initial costs and yield calculations
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dividend_tracking (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol TEXT NOT NULL UNIQUE,
+                initial_cost REAL NOT NULL,
+                shares_purchased REAL,
+                purchase_date TEXT,
+                account_number TEXT,
+                notes TEXT,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL
+            )
+        """)
+        
         conn.commit()
         conn.close()
     

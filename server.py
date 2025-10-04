@@ -835,16 +835,85 @@ async def remove_symbol(symbol: str = Form(...)):
         )
 
 
+@app.post("/journal/add-retroactive-date")
+async def add_retroactive_date(date: str = Form(...)):
+    """Add closing prices for all tracked symbols for a specific retroactive date.
+    
+    Args:
+        date: Date in YYYY-MM-DD format
+    
+    Returns:
+        JSON with number of symbols fetched
+    """
+    try:
+        # Parse date
+        try:
+            date_obj = datetime.strptime(date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        
+        # Format date with day name
+        formatted_date = date_obj.strftime('%a %Y-%m-%d')
+        
+        # Get all currently tracked symbols
+        _, existing_symbols = db.get_portfolio_data()
+        
+        if not existing_symbols:
+            raise HTTPException(status_code=400, detail="No symbols are currently tracked")
+        
+        # Fetch prices for each symbol
+        symbols_fetched = 0
+        failed_symbols = []
+        
+        for symbol in existing_symbols:
+            result = fetch_yahoo_price(symbol, formatted_date, db)
+            if result:
+                # Update portfolio value for this date and symbol
+                success = db.update_portfolio_value(formatted_date, symbol, result['price'])
+                if success:
+                    symbols_fetched += 1
+                    print(f"  ✓ Fetched {symbol}: ${result['price']:.2f}")
+                else:
+                    failed_symbols.append(f"{symbol} (database error)")
+            else:
+                failed_symbols.append(f"{symbol} (no data)")
+                print(f"  ✗ Failed to fetch {symbol}")
+        
+        result_message = f"Fetched {symbols_fetched}/{len(existing_symbols)} symbols"
+        if failed_symbols:
+            result_message += f". Failed: {', '.join(failed_symbols)}"
+        
+        return {
+            "success": True,
+            "date": formatted_date,
+            "symbols_fetched": symbols_fetched,
+            "total_symbols": len(existing_symbols),
+            "failed_symbols": failed_symbols,
+            "message": result_message
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error adding retroactive date: {str(e)}")
+
+
 @app.post("/import-rules/backfill")
 async def backfill_historical_data(
     symbol: str = Form(...),
-    start_date: str = Form(...)
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    overwrite: bool = Form(False)
 ):
-    """Backfill historical data for a symbol from start_date to most recent trading day.
+    """Backfill historical data for a symbol over a specified date range.
     
     Args:
         symbol: Stock symbol to backfill (will use symbol mapping if available)
         start_date: Start date in YYYY-MM-DD format
+        end_date: End date in YYYY-MM-DD format
+        overwrite: If True, replace existing data; if False, only fill missing data
     
     Returns:
         JSON with number of days imported and date range
@@ -855,34 +924,28 @@ async def backfill_historical_data(
         if not symbol:
             raise HTTPException(status_code=400, detail="Symbol cannot be empty")
         
-        # Parse start date
+        # Parse dates
         try:
             start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
         except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+            raise HTTPException(status_code=400, detail="Invalid start date format. Use YYYY-MM-DD")
         
-        # Determine end date (most recent trading day)
-        today = datetime.now()
+        try:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid end date format. Use YYYY-MM-DD")
         
-        # If it's weekend, go back to Friday
-        if today.weekday() == 5:  # Saturday
-            end_date_obj = today - timedelta(days=1)
-        elif today.weekday() == 6:  # Sunday
-            end_date_obj = today - timedelta(days=2)
-        else:
-            # Weekday - if market hours haven't closed yet (before 4 PM ET), use previous day
-            # For simplicity, we'll just use yesterday if before 4 PM
-            if today.hour < 16:
-                end_date_obj = today - timedelta(days=1)
-            else:
-                end_date_obj = today
+        # Validate date range
+        if end_date_obj < start_date_obj:
+            raise HTTPException(status_code=400, detail="End date must be after start date")
         
         # Check for symbol mapping
         yahoo_symbol = db.get_symbol_mapping(symbol)
         if not yahoo_symbol:
             yahoo_symbol = symbol
         
-        print(f"Backfilling {symbol} (Yahoo: {yahoo_symbol}) from {start_date} to {end_date_obj.strftime('%Y-%m-%d')}")
+        mode_str = "overwrite mode" if overwrite else "preserve mode"
+        print(f"Backfilling {symbol} (Yahoo: {yahoo_symbol}) from {start_date} to {end_date} ({mode_str})")
         
         # Fetch historical data using yfinance
         if yf is None:
@@ -907,6 +970,7 @@ async def backfill_historical_data(
         
         # Insert data for each trading day
         days_imported = 0
+        overwritten_count = 0
         first_date = None
         last_date = None
         
@@ -944,21 +1008,36 @@ async def backfill_historical_data(
                     WHERE date_id = ? AND symbol = ?
                 """, (date_id, symbol))
                 
-                existing_value = cursor.fetchone()
+                existing_value_row = cursor.fetchone()
+                existing_value = existing_value_row[0] if existing_value_row else None
                 
-                # Only insert if no existing value (don't overwrite)
-                if not existing_value or existing_value[0] is None:
-                    # Get column order for this symbol
-                    column_order = existing_symbols.index(symbol) if symbol in existing_symbols else len(existing_symbols)
+                # Get column order for this symbol
+                column_order = existing_symbols.index(symbol) if symbol in existing_symbols else len(existing_symbols)
+                
+                if overwrite:
+                    # Overwrite mode: always update the value
+                    if existing_value is not None:
+                        overwritten_count += 1
                     
                     cursor.execute("""
                         INSERT INTO portfolio_holdings (date_id, symbol, value, column_order)
                         VALUES (?, ?, ?, ?)
                         ON CONFLICT(date_id, symbol) 
-                        DO UPDATE SET value = CASE WHEN value IS NULL THEN ? ELSE value END
+                        DO UPDATE SET value = ?
                     """, (date_id, symbol, close_price, column_order, close_price))
                     
                     days_imported += 1
+                else:
+                    # Preserve mode: only insert if no existing value or value is NULL
+                    if not existing_value_row or existing_value is None:
+                        cursor.execute("""
+                            INSERT INTO portfolio_holdings (date_id, symbol, value, column_order)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(date_id, symbol) 
+                            DO UPDATE SET value = CASE WHEN value IS NULL THEN ? ELSE value END
+                        """, (date_id, symbol, close_price, column_order, close_price))
+                        
+                        days_imported += 1
             
             conn.commit()
             conn.close()
@@ -968,6 +1047,7 @@ async def backfill_historical_data(
             "symbol": symbol,
             "yahoo_symbol": yahoo_symbol,
             "days_imported": days_imported,
+            "overwritten_count": overwritten_count,
             "start_date": first_date,
             "end_date": last_date
         }
