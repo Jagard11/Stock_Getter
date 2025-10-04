@@ -154,6 +154,10 @@
 <div class="rules-header">
     <h2>📋 Import Rules Configuration</h2>
     <p>Configure how stock holdings CSV imports are processed and which symbols to track.</p>
+    <div style="background-color: var(--warning-bg); border-left: 4px solid #ff9800; padding: 15px; margin-top: 15px; border-radius: 4px;">
+        <strong style="color: #ff9800;">⚠️ Case Sensitivity Notice:</strong>
+        <span style="color: var(--text-primary);">All symbol names and rules are <strong>case-sensitive</strong>. "CASH" and "cash" are treated as different symbols. Please ensure consistent capitalization when configuring rules.</span>
+    </div>
 </div>
 
 <!-- Symbol Mappings Section -->
@@ -412,6 +416,42 @@
         <div style="margin-top: 20px;">
             <button class="btn" onclick="showAddValueScalingModal()">+ Add Scaling Rule</button>
         </div>
+    </div>
+</div>
+
+<!-- Backfill Historical Data Section -->
+<div class="card">
+    <div class="rules-section">
+        <h3>🔄 Backfill Historical Data</h3>
+        <div class="section-description">
+            <strong>Purpose:</strong> Populate historical closing prices for a symbol going back to a specific date. This is a one-time operation useful when you want to start tracking a new symbol with its complete price history.
+            <br><br>
+            <strong style="color: var(--accent-primary);">Note:</strong> This will fetch closing prices for all valid trading days between the specified start date and the most recent trading day. Existing data will not be overwritten.
+        </div>
+        
+        <form id="backfillForm" onsubmit="submitBackfill(event)" style="margin-top: 20px;">
+            <div class="form-group">
+                <label for="backfillSymbol">Symbol to Backfill</label>
+                <input type="text" id="backfillSymbol" placeholder="e.g., NVDA, AAPL" required style="text-transform: uppercase;">
+                <small style="color: var(--text-muted); display: block; margin-top: 5px;">
+                    If a symbol mapping exists, it will be used automatically
+                </small>
+            </div>
+            <div class="form-group">
+                <label for="backfillStartDate">Start Date</label>
+                <input type="date" id="backfillStartDate" required>
+                <small style="color: var(--text-muted); display: block; margin-top: 5px;">
+                    Historical data will be fetched from this date to the most recent trading day
+                </small>
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn" id="backfillBtn">🔄 Start Backfill</button>
+            </div>
+            <div id="backfillProgress" style="display: none; margin-top: 20px; padding: 15px; background-color: var(--bg-tertiary); border-radius: 4px;">
+                <div style="color: var(--accent-primary); font-weight: 600; margin-bottom: 10px;">Backfilling data...</div>
+                <div id="backfillStatus" style="color: var(--text-secondary);"></div>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -968,6 +1008,62 @@
                 showToast('✗ Error: ' + (data.detail || 'Failed to delete'), 'error');
             }
         } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    // Backfill Historical Data Functions
+    async function submitBackfill(event) {
+        event.preventDefault();
+        
+        const symbol = document.getElementById('backfillSymbol').value.toUpperCase();
+        const startDate = document.getElementById('backfillStartDate').value;
+        
+        // Disable form and show progress
+        document.getElementById('backfillBtn').disabled = true;
+        document.getElementById('backfillProgress').style.display = 'block';
+        document.getElementById('backfillStatus').textContent = `Fetching historical data for ${symbol} from ${startDate}...`;
+        
+        const formData = new FormData();
+        formData.append('symbol', symbol);
+        formData.append('start_date', startDate);
+        
+        try {
+            const response = await fetch('/import-rules/backfill', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (response.ok) {
+                document.getElementById('backfillStatus').innerHTML = `
+                    <strong style="color: var(--success-bg);">✓ Success!</strong><br>
+                    Imported ${data.days_imported} trading days for ${symbol}<br>
+                    Date range: ${data.start_date} to ${data.end_date}
+                `;
+                showToast(`✓ Backfilled ${data.days_imported} days for ${symbol}`, 'success');
+                
+                // Reset form after 3 seconds
+                setTimeout(() => {
+                    document.getElementById('backfillForm').reset();
+                    document.getElementById('backfillProgress').style.display = 'none';
+                    document.getElementById('backfillBtn').disabled = false;
+                }, 3000);
+            } else {
+                document.getElementById('backfillStatus').innerHTML = `
+                    <strong style="color: var(--error-bg);">✗ Error:</strong><br>
+                    ${data.detail || 'Failed to backfill data'}
+                `;
+                document.getElementById('backfillBtn').disabled = false;
+                showToast('✗ Backfill failed: ' + (data.detail || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            document.getElementById('backfillStatus').innerHTML = `
+                <strong style="color: var(--error-bg);">✗ Error:</strong><br>
+                ${error.message}
+            `;
+            document.getElementById('backfillBtn').disabled = false;
             showToast('✗ Error: ' + error.message, 'error');
         }
     }

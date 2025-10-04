@@ -835,6 +835,151 @@ async def remove_symbol(symbol: str = Form(...)):
         )
 
 
+@app.post("/import-rules/backfill")
+async def backfill_historical_data(
+    symbol: str = Form(...),
+    start_date: str = Form(...)
+):
+    """Backfill historical data for a symbol from start_date to most recent trading day.
+    
+    Args:
+        symbol: Stock symbol to backfill (will use symbol mapping if available)
+        start_date: Start date in YYYY-MM-DD format
+    
+    Returns:
+        JSON with number of days imported and date range
+    """
+    try:
+        symbol = symbol.strip().upper()
+        
+        if not symbol:
+            raise HTTPException(status_code=400, detail="Symbol cannot be empty")
+        
+        # Parse start date
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d')
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+        
+        # Determine end date (most recent trading day)
+        today = datetime.now()
+        
+        # If it's weekend, go back to Friday
+        if today.weekday() == 5:  # Saturday
+            end_date_obj = today - timedelta(days=1)
+        elif today.weekday() == 6:  # Sunday
+            end_date_obj = today - timedelta(days=2)
+        else:
+            # Weekday - if market hours haven't closed yet (before 4 PM ET), use previous day
+            # For simplicity, we'll just use yesterday if before 4 PM
+            if today.hour < 16:
+                end_date_obj = today - timedelta(days=1)
+            else:
+                end_date_obj = today
+        
+        # Check for symbol mapping
+        yahoo_symbol = db.get_symbol_mapping(symbol)
+        if not yahoo_symbol:
+            yahoo_symbol = symbol
+        
+        print(f"Backfilling {symbol} (Yahoo: {yahoo_symbol}) from {start_date} to {end_date_obj.strftime('%Y-%m-%d')}")
+        
+        # Fetch historical data using yfinance
+        if yf is None:
+            raise HTTPException(status_code=500, detail="yfinance not installed")
+        
+        ticker = yf.Ticker(yahoo_symbol)
+        
+        # Fetch history with a buffer
+        hist = ticker.history(
+            start=start_date_obj.strftime('%Y-%m-%d'),
+            end=(end_date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
+        )
+        
+        if hist.empty:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No historical data found for {symbol} (tried {yahoo_symbol})"
+            )
+        
+        # Get existing symbols to determine column order
+        _, existing_symbols = db.get_portfolio_data()
+        
+        # Insert data for each trading day
+        days_imported = 0
+        first_date = None
+        last_date = None
+        
+        for date_index, row in hist.iterrows():
+            trading_date = date_index.strftime('%a %Y-%m-%d')
+            close_price = float(row['Close'])
+            
+            if first_date is None:
+                first_date = trading_date
+            last_date = trading_date
+            
+            # Add symbol to portfolio if it doesn't exist
+            if symbol not in existing_symbols:
+                db.add_new_symbol(symbol)
+                existing_symbols.append(symbol)
+            
+            # Update or insert the price for this date
+            # First, ensure the date exists in portfolio_dates
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT OR IGNORE INTO portfolio_dates (date, imported_at)
+                VALUES (?, ?)
+            """, (trading_date, datetime.now().isoformat()))
+            
+            cursor.execute("SELECT id FROM portfolio_dates WHERE date = ?", (trading_date,))
+            date_id_row = cursor.fetchone()
+            if date_id_row:
+                date_id = date_id_row[0]
+                
+                # Check if this symbol already has a value for this date
+                cursor.execute("""
+                    SELECT value FROM portfolio_holdings
+                    WHERE date_id = ? AND symbol = ?
+                """, (date_id, symbol))
+                
+                existing_value = cursor.fetchone()
+                
+                # Only insert if no existing value (don't overwrite)
+                if not existing_value or existing_value[0] is None:
+                    # Get column order for this symbol
+                    column_order = existing_symbols.index(symbol) if symbol in existing_symbols else len(existing_symbols)
+                    
+                    cursor.execute("""
+                        INSERT INTO portfolio_holdings (date_id, symbol, value, column_order)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(date_id, symbol) 
+                        DO UPDATE SET value = CASE WHEN value IS NULL THEN ? ELSE value END
+                    """, (date_id, symbol, close_price, column_order, close_price))
+                    
+                    days_imported += 1
+            
+            conn.commit()
+            conn.close()
+        
+        return {
+            "success": True,
+            "symbol": symbol,
+            "yahoo_symbol": yahoo_symbol,
+            "days_imported": days_imported,
+            "start_date": first_date,
+            "end_date": last_date
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error backfilling data: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
