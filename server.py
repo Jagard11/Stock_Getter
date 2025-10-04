@@ -404,6 +404,7 @@ async def import_rules(request: Request):
     auto_fetch_symbols = db.get_auto_fetch_symbols()
     calculated_columns = db.get_calculated_columns()
     excluded_symbols = db.get_excluded_symbols()
+    value_scaling_rules = db.get_value_scaling_rules()
     
     return templates.TemplateResponse(
         "import_rules.html",
@@ -414,7 +415,8 @@ async def import_rules(request: Request):
             "symbol_mappings": symbol_mappings,
             "auto_fetch_symbols": auto_fetch_symbols,
             "calculated_columns": calculated_columns,
-            "excluded_symbols": excluded_symbols
+            "excluded_symbols": excluded_symbols,
+            "value_scaling_rules": value_scaling_rules
         }
     )
 
@@ -533,6 +535,46 @@ async def delete_exclusion(exclusion_id: int):
     success = db.delete_excluded_symbol(exclusion_id)
     if not success:
         raise HTTPException(status_code=404, detail="Exclusion not found")
+    return {"success": True}
+
+
+@app.post("/import-rules/value-scaling")
+async def save_value_scaling(
+    column_name: str = Form(...),
+    digits_to_remove: int = Form(...),
+    rule_id: Optional[int] = Form(None)
+):
+    """Save or update a value scaling rule."""
+    try:
+        if rule_id:
+            # Update existing
+            success = db.update_value_scaling_rule(rule_id, column_name, digits_to_remove)
+            if not success:
+                raise HTTPException(status_code=404, detail="Rule not found")
+        else:
+            # Create new
+            db.add_value_scaling_rule(column_name, digits_to_remove)
+        
+        return {"success": True}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/import-rules/value-scaling/{rule_id}/toggle")
+async def toggle_value_scaling(rule_id: int, enabled: bool = Form(...)):
+    """Toggle value scaling rule enabled status."""
+    success = db.toggle_value_scaling_rule(rule_id, enabled)
+    if not success:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    return {"success": True}
+
+
+@app.delete("/import-rules/value-scaling/{rule_id}")
+async def delete_value_scaling(rule_id: int):
+    """Delete a value scaling rule."""
+    success = db.delete_value_scaling_rule(rule_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Rule not found")
     return {"success": True}
 
 

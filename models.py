@@ -142,6 +142,39 @@ class Database:
             )
         """)
         
+        # Create value_scaling_rules table - Scale values during import (divide by factor)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS value_scaling_rules (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                column_name TEXT NOT NULL UNIQUE,
+                digits_to_remove INTEGER NOT NULL DEFAULT 3,
+                enabled INTEGER DEFAULT 1,
+                created_at TEXT NOT NULL,
+                modified_at TEXT NOT NULL
+            )
+        """)
+        
+        # Migration: Check if value_scaling_rules table exists and has correct schema
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='value_scaling_rules'")
+        if cursor.fetchone():
+            # Check if digits_to_remove column exists
+            cursor.execute("PRAGMA table_info(value_scaling_rules)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'digits_to_remove' not in columns:
+                # Old schema, need to recreate
+                print("Migrating value_scaling_rules table...")
+                cursor.execute("DROP TABLE IF EXISTS value_scaling_rules")
+                cursor.execute("""
+                    CREATE TABLE value_scaling_rules (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        column_name TEXT NOT NULL UNIQUE,
+                        digits_to_remove INTEGER NOT NULL DEFAULT 3,
+                        enabled INTEGER DEFAULT 1,
+                        created_at TEXT NOT NULL,
+                        modified_at TEXT NOT NULL
+                    )
+                """)
+        
         conn.commit()
         conn.close()
     
@@ -906,7 +939,20 @@ class Database:
                 else:
                     print(f"  ⊘ Skipping {column_name} (already exists in CSV or calculated columns)")
             
-            # === STEP 6: Store to Database ===
+            # === STEP 6: Apply Value Scaling Rules ===
+            scaling_rules = {r['column_name'].upper(): r for r in self.get_value_scaling_rules() if r['enabled']}
+            if scaling_rules:
+                print(f"Applying value scaling rules to {len(scaling_rules)} columns...")
+                for column_name in list(final_values.keys()):
+                    if column_name.upper() in scaling_rules:
+                        rule = scaling_rules[column_name.upper()]
+                        original_value = final_values[column_name]
+                        divisor = 10 ** rule['digits_to_remove']
+                        scaled_value = original_value / divisor
+                        final_values[column_name] = scaled_value
+                        print(f"  ⚖ Scaled {column_name}: ${original_value:,.0f} → ${scaled_value:,.0f} (÷{divisor})")
+            
+            # === STEP 7: Store to Database ===
             # Insert or get date record
             cursor.execute("""
                 INSERT OR IGNORE INTO portfolio_dates (date, imported_at)
@@ -946,7 +992,7 @@ class Database:
                     DO UPDATE SET value = ?, column_order = ?
                 """, (date_id, symbol, value, column_order, value, column_order))
             
-            # === STEP 7: Store Warnings ===
+            # === STEP 8: Store Warnings ===
             now = datetime.now().isoformat()
             for warning in warnings:
                 cursor.execute("""
@@ -1494,6 +1540,88 @@ class Database:
         conn.close()
         
         return count > 0
+    
+    # ========== Value Scaling Rules Methods ==========
+    
+    def get_value_scaling_rules(self) -> List[Dict[str, Any]]:
+        """Get all value scaling rules."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM value_scaling_rules
+            ORDER BY column_name
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def add_value_scaling_rule(self, column_name: str, digits_to_remove: int = 3) -> int:
+        """Add a value scaling rule."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO value_scaling_rules (column_name, digits_to_remove, enabled, created_at, modified_at)
+            VALUES (?, ?, 1, ?, ?)
+        """, (column_name, digits_to_remove, now, now))
+        
+        rule_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return rule_id
+    
+    def update_value_scaling_rule(self, rule_id: int, column_name: str, digits_to_remove: int) -> bool:
+        """Update a value scaling rule."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE value_scaling_rules
+            SET column_name = ?, digits_to_remove = ?, modified_at = ?
+            WHERE id = ?
+        """, (column_name, digits_to_remove, now, rule_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def toggle_value_scaling_rule(self, rule_id: int, enabled: bool) -> bool:
+        """Enable or disable a value scaling rule."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE value_scaling_rules
+            SET enabled = ?
+            WHERE id = ?
+        """, (1 if enabled else 0, rule_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def delete_value_scaling_rule(self, rule_id: int) -> bool:
+        """Delete a value scaling rule."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM value_scaling_rules WHERE id = ?", (rule_id,))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
     
     # ========== Import Warnings Methods ==========
     

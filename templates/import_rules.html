@@ -351,6 +351,70 @@
     </div>
 </div>
 
+<!-- Value Scaling Rules Section -->
+<div class="card">
+    <div class="rules-section">
+        <h3>⚖️ Value Scaling Rules</h3>
+        <div class="section-description">
+            <strong>Purpose:</strong> Automatically scale (divide) column values during import. For example, convert $2,000,000 to $2,000 by removing 3 digits (÷1000). Useful for maintaining consistency with historical data that was already scaled.
+            <br><br>
+            <strong style="color: var(--warning-bg);">⚠️ Warning:</strong> This permanently modifies values during import. Once scaled, original values cannot be recovered.
+        </div>
+        
+        {% if value_scaling_rules %}
+        <table class="rules-table">
+            <thead>
+                <tr>
+                    <th>Column Name</th>
+                    <th>Digits to Remove</th>
+                    <th>Divisor</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for rule in value_scaling_rules %}
+                <tr>
+                    <td><strong>{{ rule.column_name }}</strong></td>
+                    <td>{{ rule.digits_to_remove }}</td>
+                    <td>÷{{ 10 ** rule.digits_to_remove }}</td>
+                    <td>
+                        {% if rule.enabled %}
+                        <span class="status-badge status-enabled">Enabled</span>
+                        {% else %}
+                        <span class="status-badge status-disabled">Disabled</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <div class="btn-group">
+                            <button class="btn btn-small btn-secondary" 
+                                onclick="editValueScaling({{ rule.id }}, '{{ rule.column_name }}', {{ rule.digits_to_remove }})">
+                                Edit
+                            </button>
+                            {% if rule.enabled %}
+                            <button class="btn btn-small btn-secondary" onclick="toggleValueScaling({{ rule.id }}, false)">Disable</button>
+                            {% else %}
+                            <button class="btn btn-small" onclick="toggleValueScaling({{ rule.id }}, true)">Enable</button>
+                            {% endif %}
+                            <button class="btn btn-small btn-danger" onclick="deleteValueScaling({{ rule.id }}, '{{ rule.column_name }}')">Delete</button>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty-state">
+            No value scaling rules configured. Click "Add Scaling Rule" to create one.
+        </div>
+        {% endif %}
+        
+        <div style="margin-top: 20px;">
+            <button class="btn" onclick="showAddValueScalingModal()">+ Add Scaling Rule</button>
+        </div>
+    </div>
+</div>
+
 <!-- Add/Edit Symbol Mapping Modal -->
 <div id="mappingModal" class="modal">
     <div class="modal-content">
@@ -465,6 +529,40 @@
             <div class="btn-group">
                 <button type="submit" class="btn">Save</button>
                 <button type="button" class="btn btn-secondary" onclick="closeExclusionModal()">Cancel</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add/Edit Value Scaling Rule Modal -->
+<div id="valueScalingModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <span class="close-modal" onclick="closeValueScalingModal()">&times;</span>
+            <h3 id="valueScalingModalTitle">Add Value Scaling Rule</h3>
+        </div>
+        <form id="valueScalingForm" onsubmit="saveValueScalingSubmit(event)">
+            <input type="hidden" id="valueScalingId" value="">
+            <div class="form-group">
+                <label for="scalingColumnName">Column Name</label>
+                <input type="text" id="scalingColumnName" placeholder="e.g., Total" required>
+            </div>
+            <div class="form-group">
+                <label for="digitsToRemove">Digits to Remove</label>
+                <input type="number" id="digitsToRemove" value="3" min="1" max="9" required>
+                <small style="color: var(--text-muted); display: block; margin-top: 5px;">
+                    3 digits = ÷1,000 | 6 digits = ÷1,000,000
+                </small>
+            </div>
+            <div class="form-group">
+                <label>Preview</label>
+                <div style="background-color: var(--bg-tertiary); padding: 10px; border-radius: 4px;">
+                    <span id="scalingPreview">$2,000,000 → $2,000 (÷1,000)</span>
+                </div>
+            </div>
+            <div class="btn-group">
+                <button type="submit" class="btn">Save</button>
+                <button type="button" class="btn btn-secondary" onclick="closeValueScalingModal()">Cancel</button>
             </div>
         </form>
     </div>
@@ -754,6 +852,116 @@
             
             if (response.ok) {
                 showToast('🗑️ Symbol exclusion removed!', 'removal');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to delete'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    // Value Scaling Functions
+    function updateScalingPreview() {
+        const digits = parseInt(document.getElementById('digitsToRemove').value) || 3;
+        const divisor = Math.pow(10, digits);
+        const example = 2000000;
+        const result = example / divisor;
+        document.getElementById('scalingPreview').textContent = 
+            `$${example.toLocaleString()} → $${result.toLocaleString()} (÷${divisor.toLocaleString()})`;
+    }
+
+    function showAddValueScalingModal() {
+        document.getElementById('valueScalingModalTitle').textContent = 'Add Value Scaling Rule';
+        document.getElementById('valueScalingId').value = '';
+        document.getElementById('scalingColumnName').value = '';
+        document.getElementById('digitsToRemove').value = '3';
+        updateScalingPreview();
+        document.getElementById('valueScalingModal').style.display = 'block';
+        
+        // Add event listener for live preview updates
+        document.getElementById('digitsToRemove').addEventListener('input', updateScalingPreview);
+    }
+
+    function editValueScaling(id, columnName, digitsToRemove) {
+        document.getElementById('valueScalingModalTitle').textContent = 'Edit Value Scaling Rule';
+        document.getElementById('valueScalingId').value = id;
+        document.getElementById('scalingColumnName').value = columnName;
+        document.getElementById('digitsToRemove').value = digitsToRemove;
+        updateScalingPreview();
+        document.getElementById('valueScalingModal').style.display = 'block';
+        
+        // Add event listener for live preview updates
+        document.getElementById('digitsToRemove').addEventListener('input', updateScalingPreview);
+    }
+
+    function closeValueScalingModal() {
+        document.getElementById('valueScalingModal').style.display = 'none';
+    }
+
+    async function saveValueScalingSubmit(event) {
+        event.preventDefault();
+        
+        const formData = new FormData();
+        formData.append('column_name', document.getElementById('scalingColumnName').value);
+        formData.append('digits_to_remove', document.getElementById('digitsToRemove').value);
+        
+        const id = document.getElementById('valueScalingId').value;
+        if (id) {
+            formData.append('rule_id', id);
+        }
+        
+        try {
+            const response = await fetch('/import-rules/value-scaling', {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('✓ Value scaling rule saved!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to save'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    async function toggleValueScaling(id, enabled) {
+        const formData = new FormData();
+        formData.append('enabled', enabled);
+        
+        try {
+            const response = await fetch(`/import-rules/value-scaling/${id}/toggle`, {
+                method: 'POST',
+                body: formData
+            });
+            
+            if (response.ok) {
+                showToast('✓ Rule ' + (enabled ? 'enabled' : 'disabled') + '!', 'success');
+                setTimeout(() => window.location.reload(), 1000);
+            } else {
+                const data = await response.json();
+                showToast('✗ Error: ' + (data.detail || 'Failed to update'), 'error');
+            }
+        } catch (error) {
+            showToast('✗ Error: ' + error.message, 'error');
+        }
+    }
+
+    async function deleteValueScaling(id, columnName) {
+        if (!confirm(`Delete value scaling rule for "${columnName}"?`)) return;
+        
+        try {
+            const response = await fetch(`/import-rules/value-scaling/${id}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                showToast('🗑️ Value scaling rule deleted!', 'removal');
                 setTimeout(() => window.location.reload(), 1000);
             } else {
                 const data = await response.json();
