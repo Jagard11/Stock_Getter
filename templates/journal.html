@@ -478,6 +478,52 @@
         gap: 10px;
         margin-top: 20px;
     }
+    
+    /* Cancel Fetch Button Styles */
+    .cancel-fetch-btn {
+        background-color: #ff6b6b;
+        color: white;
+        border: 2px solid #ff6b6b;
+        padding: 12px 24px;
+        border-radius: 4px;
+        font-size: 1em;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        flex: 1;
+    }
+    
+    .cancel-fetch-btn:hover:not(:disabled) {
+        background-color: #ff5252;
+        border-color: #ff5252;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    }
+    
+    .cancel-fetch-btn:disabled {
+        background-color: #6c757d;
+        border-color: #6c757d;
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+    
+    /* Button visibility controls */
+    .hidden {
+        display: none !important;
+    }
+    
+    /* Disabled button styling for grayed out appearance */
+    .value-popup button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        background-color: #6c757d !important;
+        border-color: #6c757d !important;
+    }
+    
+    /* Ensure buttons take proper flex width */
+    .value-popup .button-group button {
+        flex: 1;
+    }
         color: var(--text-secondary);
         margin-bottom: 5px;
     }
@@ -1403,33 +1449,43 @@ document.addEventListener('DOMContentLoaded', function() {
         modal.className = 'value-popup';
         modal.style.width = '500px';
         modal.style.minHeight = '350px';
+        modal.style.maxHeight = '90vh';
+        modal.style.display = 'flex';
+        modal.style.flexDirection = 'column';
+        modal.style.overflow = 'hidden';
         
         modal.innerHTML = `
-            <h3 style="text-align: center;">📅 Add Historical Date</h3>
-            <p style="color: var(--text-secondary); margin-bottom: 20px; text-align: center;">
-                Fetch closing prices for all tracked symbols for a specific date
-            </p>
-            <div class="form-group" style="margin-bottom: 25px;">
-                <label for="retroactive-date-input" style="display: block; margin-bottom: 10px; font-weight: 600; color: var(--text-primary);">
-                    Select Date
-                </label>
-                <input type="date" 
-                       id="retroactive-date-input" 
-                       style="width: 100%; padding: 14px; font-size: 1.1em; background-color: var(--bg-tertiary); border: 2px solid var(--border-primary); border-radius: 4px; color: var(--text-primary);"
-                       max="${new Date().toISOString().split('T')[0]}">
-                <small style="color: var(--text-muted); display: block; margin-top: 8px;">
-                    The system will fetch Yahoo Finance closing prices for this date
-                </small>
-                <div id="skipped-hint" style="color: var(--text-muted); margin-top: 6px; font-size: 0.9em;"></div>
+            <div style="flex: 0 0 auto;">
+                <h3 style="text-align: center; margin-top: 0;">📅 Add Historical Date</h3>
+                <p style="color: var(--text-secondary); margin-bottom: 20px; text-align: center;">
+                    Fetch closing prices for all tracked symbols for a specific date
+                </p>
             </div>
-            <div id="retroactive-status" style="display: none; padding: 15px; background-color: var(--bg-tertiary); border-radius: 4px; margin-bottom: 20px;">
-                <div id="retroactive-message" style="font-weight: 600; margin-bottom: 10px;"></div>
-                <div id="retroactive-details" style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 10px;"></div>
-                <div id="retroactive-log" style="display: none; max-height: 200px; overflow-y: auto; background-color: var(--bg-primary); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85em; border: 1px solid var(--border-primary);"></div>
+            <div style="flex: 1 1 auto; overflow-y: auto; min-height: 0;">
+                <div class="form-group" style="margin-bottom: 25px;">
+                    <label for="retroactive-date-input" style="display: block; margin-bottom: 10px; font-weight: 600; color: var(--text-primary);">
+                        Select Date
+                    </label>
+                    <input type="date" 
+                           id="retroactive-date-input" 
+                           style="width: 100%; padding: 14px; font-size: 1.1em; background-color: var(--bg-tertiary); border: 2px solid var(--border-primary); border-radius: 4px; color: var(--text-primary);"
+                           max="${new Date().toISOString().split('T')[0]}">
+                    <small style="color: var(--text-muted); display: block; margin-top: 8px;">
+                        The system will fetch Yahoo Finance closing prices for this date
+                    </small>
+                    <div id="skipped-hint" style="color: var(--text-muted); margin-top: 6px; font-size: 0.9em;"></div>
+                </div>
+                <div id="retroactive-status" style="display: none; padding: 15px; background-color: var(--bg-tertiary); border-radius: 4px; margin-bottom: 20px;">
+                    <div id="retroactive-message" style="font-weight: 600; margin-bottom: 10px;"></div>
+                    <div id="retroactive-details" style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 10px;"></div>
+                    <div id="retroactive-log" style="display: none; max-height: 200px; overflow-y: auto; background-color: var(--bg-primary); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85em; border: 1px solid var(--border-primary);"></div>
+                </div>
             </div>
-            <div class="button-group" id="button-container">
-                <button class="save-btn" id="fetch-retroactive-btn">Fetch Prices</button>
-                <button class="cancel-btn" id="cancel-retroactive-btn">Cancel</button>
+            <div class="button-group" id="button-container" style="flex: 0 0 auto; margin-top: 20px;">
+                <button class="save-btn" id="fetch-retroactive-btn">📅 Fetch Prices</button>
+                <button class="save-btn hidden" id="view-journal-btn" disabled>📊 View Journal</button>
+                <button class="cancel-btn" id="cancel-retroactive-btn">✕ Close</button>
+                <button class="cancel-fetch-btn hidden" id="cancel-fetch-btn">⛔ Cancel Fetch</button>
             </div>
         `;
         
@@ -1438,11 +1494,28 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const dateInput = modal.querySelector('#retroactive-date-input');
         const fetchBtn = modal.querySelector('#fetch-retroactive-btn');
+        const viewJournalBtn = modal.querySelector('#view-journal-btn');
         const cancelBtn = modal.querySelector('#cancel-retroactive-btn');
+        const cancelFetchBtn = modal.querySelector('#cancel-fetch-btn');
         const statusDiv = modal.querySelector('#retroactive-status');
         const messageDiv = modal.querySelector('#retroactive-message');
         const detailsDiv = modal.querySelector('#retroactive-details');
         const logDiv = modal.querySelector('#retroactive-log');
+        
+        // Debug: Log button elements and initial state
+        console.log('=== MODAL INITIALIZED v2.0 ===');
+        console.log('Modal buttons found:', {
+            fetchBtn: !!fetchBtn,
+            viewJournalBtn: !!viewJournalBtn,
+            cancelBtn: !!cancelBtn,
+            cancelFetchBtn: !!cancelFetchBtn
+        });
+        console.log('Initial button visibility:', {
+            fetchBtn_hidden: fetchBtn?.classList.contains('hidden'),
+            viewJournalBtn_hidden: viewJournalBtn?.classList.contains('hidden'),
+            cancelBtn_hidden: cancelBtn?.classList.contains('hidden'),
+            cancelFetchBtn_hidden: cancelFetchBtn?.classList.contains('hidden')
+        });
         
         // Set default date to yesterday
         const yesterday = new Date();
@@ -1457,6 +1530,37 @@ document.addEventListener('DOMContentLoaded', function() {
             modal.remove();
         };
         
+        // View Journal button handler
+        viewJournalBtn.addEventListener('click', () => {
+            window.location.href = '/journal';
+        });
+        
+        // Cancel fetch handler
+        cancelFetchBtn.addEventListener('click', async function() {
+            if (confirm('Are you sure you want to cancel the fetch operation?')) {
+                cancelFetchBtn.disabled = true;
+                cancelFetchBtn.textContent = 'Cancelling...';
+                
+                try {
+                    const response = await fetch('/journal/add-retroactive-date/cancel', {
+                        method: 'POST'
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // The cancellation will be reflected in the SSE stream
+                        cancelFetchBtn.textContent = 'Cancelled';
+                    }
+                } catch (error) {
+                    console.error('Error cancelling fetch:', error);
+                    alert('Failed to cancel operation. It may complete anyway.');
+                    cancelFetchBtn.disabled = false;
+                    cancelFetchBtn.textContent = 'Cancel Fetch';
+                }
+            }
+        });
+        
         // Fetch prices handler
         fetchBtn.addEventListener('click', async function() {
             const selectedDate = dateInput.value;
@@ -1466,10 +1570,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
-            // Disable input and button
+            console.log('=== FETCH STARTED ===');
+            
+            // Disable input and hide fetch button
             dateInput.disabled = true;
-            fetchBtn.disabled = true;
-            fetchBtn.textContent = 'Fetching...';
+            console.log('1. Hiding Fetch button');
+            fetchBtn.classList.add('hidden');
+            
+            // Show View Journal button (disabled/grayed out)
+            console.log('2. Showing View Journal button (disabled)');
+            viewJournalBtn.classList.remove('hidden');
+            viewJournalBtn.disabled = true;
+            
+            // Hide Close button, show Cancel Fetch button
+            console.log('3. Hiding Close button');
+            cancelBtn.classList.add('hidden');
+            console.log('4. Showing Cancel Fetch button');
+            cancelFetchBtn.classList.remove('hidden');
+            cancelFetchBtn.disabled = false;
+            cancelFetchBtn.textContent = 'Cancel Fetch';
+            
+            console.log('Button states AFTER changes:', {
+                fetchBtn_hidden: fetchBtn.classList.contains('hidden'),
+                fetchBtn_display: window.getComputedStyle(fetchBtn).display,
+                viewJournalBtn_hidden: viewJournalBtn.classList.contains('hidden'),
+                viewJournalBtn_display: window.getComputedStyle(viewJournalBtn).display,
+                viewJournalBtn_disabled: viewJournalBtn.disabled,
+                cancelBtn_hidden: cancelBtn.classList.contains('hidden'),
+                cancelBtn_display: window.getComputedStyle(cancelBtn).display,
+                cancelFetchBtn_hidden: cancelFetchBtn.classList.contains('hidden'),
+                cancelFetchBtn_display: window.getComputedStyle(cancelFetchBtn).display
+            });
             
             // Show status
             statusDiv.style.display = 'block';
@@ -1518,26 +1649,76 @@ document.addEventListener('DOMContentLoaded', function() {
                     evSrc.addEventListener('done', (e) => {
                         evSrc.close();
                         sseClosed = true;
-                        // Flip UI to success when streaming completes
-                        messageDiv.textContent = '✓ Success!';
-                        messageDiv.style.color = 'var(--success-bg)';
+                        
+                        // Parse summary to check if cancelled
+                        let wasCancelled = false;
                         try {
                             const summary = JSON.parse(e.data || '{}');
+                            wasCancelled = summary.cancelled || false;
+                            
+                            // Update UI based on cancellation status
+                            if (wasCancelled) {
+                                messageDiv.textContent = '⚠ Cancelled';
+                                messageDiv.style.color = 'var(--warning-bg)';
+                            } else {
+                                messageDiv.textContent = '✓ Success!';
+                                messageDiv.style.color = 'var(--success-bg)';
+                            }
+                            
                             if (summary && (summary.symbols_fetched !== undefined || summary.total_symbols !== undefined)) {
-                                detailsDiv.innerHTML = `Fetched <strong>${summary.symbols_fetched ?? ''}/${summary.total_symbols ?? ''}</strong> stock symbols for ${selectedDate}`;
+                                let statusText = `Fetched <strong>${summary.symbols_fetched ?? ''}/${summary.total_symbols ?? ''}</strong> stock symbols for ${selectedDate}`;
+                                if (wasCancelled) {
+                                    statusText += ' <span style="color: var(--warning-bg);">(operation cancelled)</span>';
+                                }
+                                detailsDiv.innerHTML = statusText;
                             }
                         } catch(_) {}
-                        // Enable View/Close buttons
-                        const buttonContainer = modal.querySelector('#button-container');
-                        if (buttonContainer) {
-                            buttonContainer.innerHTML = `
-                                <button class="save-btn" style="flex: 1;" id="view-journal-btn">View Journal</button>
-                                <button class="cancel-btn" style="flex: 1;" id="close-modal-btn">Close</button>
-                            `;
-                            const viewBtn = document.getElementById('view-journal-btn');
-                            const closeBtn = document.getElementById('close-modal-btn');
-                            if (viewBtn) viewBtn.addEventListener('click', () => { window.location.href = '/journal'; });
-                            if (closeBtn) closeBtn.addEventListener('click', () => closeModal());
+                        
+                        // Hide Cancel Fetch button, show Close button
+                        cancelFetchBtn.classList.add('hidden');
+                        cancelBtn.classList.remove('hidden');
+                        
+                        // Enable View Journal button
+                        viewJournalBtn.disabled = false;
+                        
+                        console.log('Fetch completed, button states:', {
+                            viewJournalBtn_disabled: viewJournalBtn.disabled,
+                            viewJournalBtn_hidden: viewJournalBtn.classList.contains('hidden'),
+                            cancelFetchBtn_hidden: cancelFetchBtn.classList.contains('hidden'),
+                            cancelBtn_hidden: cancelBtn.classList.contains('hidden')
+                        });
+                        
+                        // If cancelled, offer to delete the partial entry
+                        if (wasCancelled) {
+                            setTimeout(() => {
+                                const shouldDelete = confirm(
+                                    'The fetch was cancelled and may have created a partial entry.\n\n' +
+                                    'Would you like to delete this incomplete entry?'
+                                );
+                                
+                                if (shouldDelete) {
+                                    // Delete the date entry using the formatted date
+                                    const deleteFormData = new FormData();
+                                    deleteFormData.append('date', formattedDate);
+                                    
+                                    fetch('/journal/delete-date', {
+                                        method: 'POST',
+                                        body: deleteFormData
+                                    })
+                                    .then(response => response.json())
+                                    .then(deleteData => {
+                                        if (deleteData.success) {
+                                            messageDiv.textContent = '🗑️ Partial entry deleted';
+                                            messageDiv.style.color = 'var(--text-secondary)';
+                                            detailsDiv.innerHTML = 'The incomplete entry has been removed from the journal.';
+                                        }
+                                    })
+                                    .catch(err => {
+                                        console.error('Error deleting partial entry:', err);
+                                        alert('Failed to delete the partial entry. You may need to delete it manually.');
+                                    });
+                                }
+                            }, 500);
                         }
                     });
                     evSrc.onerror = () => {
@@ -1556,6 +1737,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (!response.ok) {
                     throw new Error(data.detail || 'Failed to fetch prices');
                 }
+                
+                // Store the formatted date for later use (e.g., deletion)
+                const formattedDate = data.date;
 
                 // Keep status as fetching (yellow) until the stream signals completion
                 messageDiv.textContent = '⏳ Fetching prices...';
@@ -1593,20 +1777,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     logDiv.scrollTop = logDiv.scrollHeight;
                 }
                 
-                // Show success toast
-                showToast(`✓ Added ${data.symbols_fetched} symbols for ${data.date}`, 'success');
-                
-                // Change buttons to just "Close" and "View Journal"
-                const buttonContainer = modal.querySelector('#button-container');
-                buttonContainer.innerHTML = `
-                    <button class="save-btn" style="flex: 1;" id="view-journal-btn">View Journal</button>
-                    <button class="cancel-btn" style="flex: 1;" id="close-modal-btn">Close</button>
-                `;
-                // View Journal should refresh table in place (no full reload) by navigating to /journal
-                document.getElementById('view-journal-btn').addEventListener('click', () => {
-                    window.location.href = '/journal';
-                });
-                document.getElementById('close-modal-btn').addEventListener('click', () => closeModal());
+                // Note: Don't change button state here - the SSE 'done' event will handle it
+                // when the background work actually completes
+                console.log('POST response received, background work started');
                 
             } catch (error) {
                 console.error('Error fetching retroactive date:', error);
@@ -1614,10 +1787,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 messageDiv.style.color = 'var(--error-bg)';
                 detailsDiv.textContent = error.message;
                 
-                // Re-enable controls
+                // Re-enable controls and restore initial button state
                 dateInput.disabled = false;
-                fetchBtn.disabled = false;
-                fetchBtn.textContent = 'Fetch Prices';
+                fetchBtn.classList.remove('hidden');
+                
+                // Hide View Journal button
+                viewJournalBtn.classList.add('hidden');
+                
+                // Hide Cancel Fetch button, show Close button
+                cancelFetchBtn.classList.add('hidden');
+                cancelBtn.classList.remove('hidden');
                 
                 showToast('✗ Error: ' + error.message, 'error');
             } finally {

@@ -39,7 +39,8 @@ fetch_progress_state = {
     "in_progress": False,
     "result": None,
     "processed": 0,
-    "total": 0
+    "total": 0,
+    "cancelled": False
 }
 
 
@@ -78,11 +79,13 @@ async def retroactive_progress_stream():
                     payload = json.dumps({
                         "line": line,
                         "processed": fetch_progress_state.get("processed", 0),
-                        "total": fetch_progress_state.get("total", 0)
+                        "total": fetch_progress_state.get("total", 0),
+                        "cancelled": fetch_progress_state.get("cancelled", False)
                     })
                     yield f"data: {payload}\n\n"
             await asyncio.sleep(0.4)
         summary = fetch_progress_state.get("result") or {}
+        summary["cancelled"] = fetch_progress_state.get("cancelled", False)
         yield f"event: done\ndata: {json.dumps(summary)}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream", headers={
@@ -90,6 +93,17 @@ async def retroactive_progress_stream():
         "Pragma": "no-cache",
         "Expires": "0"
     })
+
+
+@app.post("/journal/add-retroactive-date/cancel")
+async def cancel_retroactive_fetch():
+    """Cancel an in-progress retroactive fetch operation."""
+    if fetch_progress_state["in_progress"]:
+        fetch_progress_state["cancelled"] = True
+        fetch_progress_state["log"].append("⚠ Cancellation requested by user...")
+        return {"success": True, "message": "Cancellation requested"}
+    else:
+        return {"success": False, "message": "No fetch operation in progress"}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -918,6 +932,7 @@ async def add_retroactive_date(date: str = Form(...), background_tasks: Backgrou
         # Reset progress log and mark as running
         fetch_progress_state["log"] = []
         fetch_progress_state["in_progress"] = True
+        fetch_progress_state["cancelled"] = False
 
         # Ensure the portfolio date row exists for this date (needed for DB upserts)
         try:
@@ -974,6 +989,13 @@ async def add_retroactive_date(date: str = Form(...), background_tasks: Backgrou
             fetch_progress_state["total"] = len(symbols_to_fetch)
             fetch_progress_state["processed"] = 0
             for symbol in symbols_to_fetch:
+                # Check for cancellation
+                if fetch_progress_state.get("cancelled", False):
+                    cancel_msg = f"✗ Fetch cancelled by user after {symbols_fetched_local} symbols"
+                    fetch_progress_state["log"].append(cancel_msg)
+                    print(f"  {cancel_msg}")
+                    break
+                
                 # Progress: announce attempt
                 attempt_msg = f"… Fetching {symbol} for {formatted_date}"
                 print(f"  {attempt_msg}")
@@ -1023,13 +1045,17 @@ async def add_retroactive_date(date: str = Form(...), background_tasks: Backgrou
 
             # Write summary
             # Summary stored for client; message used only for logs
+            was_cancelled = fetch_progress_state.get("cancelled", False)
             result_message = f"Fetched {symbols_fetched_local}/{len(symbols_to_fetch)} symbols"
+            if was_cancelled:
+                result_message += " (CANCELLED)"
             if failed_symbols_local:
                 result_message += f". Failed: {', '.join(failed_symbols_local)}"
             fetch_progress_state["in_progress"] = False
             fetch_progress_state["result"] = {
                 "symbols_fetched": symbols_fetched_local,
-                "total_symbols": len(symbols_to_fetch)
+                "total_symbols": len(symbols_to_fetch),
+                "cancelled": was_cancelled
             }
 
         # Kick off background work; always use a threadpool so POST returns immediately
