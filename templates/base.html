@@ -496,8 +496,9 @@
         }
 
         *:focus-visible {
-
-    /* Toast Notification Overlay */
+            outline: 3px solid var(--focus-outline);
+            outline-offset: 2px;
+        }
 
     /* Toast Notification System - High Visibility */
     .toast-notification {
@@ -573,57 +574,147 @@
             transform: translateX(-50%) translateY(-50px);
         }
     }
-            outline-offset: 2px;
-        /* Windows High Contrast Mode support */
-        @media (forced-colors: active) {
-            /* Ensure all interactive elements have visible borders */
-            button, .btn, input, select, textarea, a {
-                border: 2px solid ButtonText !important;
-            }
-            
-            /* Ensure focus indicators are always visible */
-            *:focus, *:focus-visible {
 
-    /* Toast Notification Overlay */
-                outline: 3px solid Highlight !important;
-                outline-offset: 2px !important;
-            }
-            
-            /* Ensure text is visible */
-            body, .card, table, .badge {
+        /* ============================================================
+           Windows High Contrast Mode Support (WCAG 2.1 Level AA)
+           ============================================================
+           Uses Windows System Colors for forced-colors mode.
+           These ensure the app works with all Windows high contrast themes.
+        */
+        @media (forced-colors: active) {
+            /* Base elements use system colors */
+            body {
                 color: WindowText !important;
                 background-color: Window !important;
                 forced-color-adjust: auto;
             }
             
-            /* Buttons must be distinguishable */
+            /* All interactive elements get visible borders */
+            button, .btn, input, select, textarea, a, nav a {
+                border: 2px solid ButtonBorder !important;
+                forced-color-adjust: none;
+            }
+            
+            /* Buttons use Windows button colors */
             button, .btn {
                 color: ButtonText !important;
                 background-color: ButtonFace !important;
                 border-color: ButtonBorder !important;
             }
             
-            button:hover, .btn:hover {
+            button:hover, .btn:hover, button:focus, .btn:focus {
                 border-color: Highlight !important;
+                outline: 3px solid Highlight !important;
             }
             
-            /* Links must be distinguishable */
-            a {
+            /* Focus indicators always visible with system highlight color */
+            *:focus, *:focus-visible {
+                outline: 3px solid Highlight !important;
+                outline-offset: 2px !important;
+            }
+            
+            /* Links use system link color */
+            a, nav a {
                 color: LinkText !important;
+                forced-color-adjust: none;
             }
             
-            /* Table borders */
-            table th, table td {
-                border: 1px solid WindowText !important;
+            a:hover, nav a:hover {
+                border-color: Highlight !important;
+                outline: 2px solid Highlight !important;
             }
             
-            /* Header visibility */
+            /* Cards and containers */
+            .card {
+                background-color: Canvas !important;
+                border: 2px solid WindowText !important;
+                color: WindowText !important;
+            }
+            
+            /* Header uses canvas background */
             header {
                 background-color: Canvas !important;
                 border-color: WindowText !important;
             }
+            
+            header h1, header h1 a {
+                color: LinkText !important;
+            }
+            
+            /* Tables must have visible borders */
+            table {
+                border: 2px solid WindowText !important;
+            }
+            
+            table th, table td {
+                border: 1px solid WindowText !important;
+                color: WindowText !important;
+                background-color: Canvas !important;
+            }
+            
+            table th {
+                font-weight: 700 !important;
+                border-bottom: 3px solid WindowText !important;
+            }
+            
+            table tr:hover {
+                outline: 2px solid Highlight !important;
+                outline-offset: -2px;
+            }
+            
+            /* Form inputs */
+            input, select, textarea {
+                color: WindowText !important;
+                background-color: Field !important;
+                border: 2px solid WindowText !important;
+            }
+            
+            input:focus, select:focus, textarea:focus {
+                outline: 3px solid Highlight !important;
+                border-color: Highlight !important;
+            }
+            
+            /* Badges and status indicators */
+            .badge {
+                border: 2px solid WindowText !important;
+                background-color: ButtonFace !important;
+                color: ButtonText !important;
+                forced-color-adjust: none;
+            }
+            
+            /* Alerts must be distinguishable */
+            .alert {
+                border: 3px solid WindowText !important;
+                background-color: Canvas !important;
+                color: WindowText !important;
+            }
+            
+            /* Toast notifications */
+            .toast-notification {
+                background-color: InfoBackground !important;
+                color: InfoText !important;
+                border: 4px solid WindowText !important;
+                forced-color-adjust: none;
+            }
+            
+            /* Code blocks */
+            pre, code {
+                background-color: Canvas !important;
+                border: 2px solid WindowText !important;
+                color: WindowText !important;
+            }
+            
+            /* Ensure SVG/icons are visible */
+            svg, img {
+                forced-color-adjust: auto;
+            }
+            
+            /* Selection visibility */
+            ::selection {
+                background-color: Highlight !important;
+                color: HighlightText !important;
+            }
         }
-
         }
     </style>
     {% block extra_styles %}{% endblock %}

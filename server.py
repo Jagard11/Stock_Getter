@@ -1062,5 +1062,21 @@ async def backfill_historical_data(
 
 if __name__ == "__main__":
     import uvicorn
+    import platform
+    
+    # Detect platform for displaying correct URL
+    is_windows = platform.system() == "Windows"
+    display_host = "localhost" if is_windows else "0.0.0.0"
+    
+    # Print startup message with correct URL for platform
+    print("\n" + "="*60)
+    print("Starting Stock Tracker Server")
+    print("="*60)
+    print(f"Server running at: http://{display_host}:8000")
+    print(f"Platform: {platform.system()}")
+    print("Press CTRL+C to quit")
+    print("="*60 + "\n")
+    
+    # Run server (still bind to 0.0.0.0 to allow network access)
     uvicorn.run(app, host="0.0.0.0", port=8000)
 
