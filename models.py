@@ -1711,8 +1711,6 @@ def fetch_yahoo_price(symbol: str, date_str: str, db_instance: 'Database') -> Op
         if not yahoo_symbol:
             yahoo_symbol = symbol  # No mapping, use symbol as-is
         
-        print(f"  Fetching {symbol} → {yahoo_symbol}")
-        
         # Parse the date - handle "DayName YYYY-MM-DD" format
         if ' ' in date_str:
             # Extract just the YYYY-MM-DD portion
@@ -1722,29 +1720,27 @@ def fetch_yahoo_price(symbol: str, date_str: str, db_instance: 'Database') -> Op
         ticker = yf.Ticker(yahoo_symbol)
         
         # Get historical data for the specific date
-        # Fetch a range around the date to handle market closures
+        # Fetch a small range around the date to handle weekends/holidays (max 4 days back)
         date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-        start_date = (date_obj - timedelta(days=7)).strftime('%Y-%m-%d')
+        start_date = (date_obj - timedelta(days=4)).strftime('%Y-%m-%d')
         end_date = (date_obj + timedelta(days=1)).strftime('%Y-%m-%d')
         
-        print(f"  Fetching history from {start_date} to {end_date}")
         hist = ticker.history(start=start_date, end=end_date)
         
         if hist.empty:
-            print(f"  ERROR: No data returned from Yahoo Finance for {yahoo_symbol}")
+            print(f"  ✗ No data from Yahoo Finance for {yahoo_symbol}")
             return None
-        
-        print(f"  Got {len(hist)} days of data")
         
         # Try to get the exact date, or the closest previous date
         if date_str in hist.index.strftime('%Y-%m-%d').tolist():
             price_data = hist[hist.index.strftime('%Y-%m-%d') == date_str].iloc[0]
-            print(f"  Using exact date {date_str}")
+            actual_date = date_str
         else:
             # Get the most recent price before or on the date
             price_data = hist.iloc[-1]
             actual_date = hist.index[-1].strftime('%Y-%m-%d')
-            print(f"  Using most recent date {actual_date} (requested {date_str})")
+            if actual_date != date_str:
+                print(f"  ℹ️ Used {actual_date} (closest to {date_str})")
         
         price = float(price_data['Close'])
         

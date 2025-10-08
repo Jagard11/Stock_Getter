@@ -345,6 +345,35 @@
     }
 
     .card p {
+        color: var(--text-secondary);
+        margin-bottom: 5px;
+    }
+    
+    /* Retroactive fetch log scrollbar */
+    #retroactive-log::-webkit-scrollbar {
+        width: 10px;
+    }
+    
+    #retroactive-log::-webkit-scrollbar-track {
+        background: var(--bg-secondary);
+        border-radius: 4px;
+    }
+    
+    #retroactive-log::-webkit-scrollbar-thumb {
+        background: var(--accent-primary);
+        border-radius: 4px;
+        border: 2px solid var(--bg-secondary);
+    }
+    
+    #retroactive-log::-webkit-scrollbar-thumb:hover {
+        background: var(--accent-hover);
+    }
+    
+    #retroactive-log {
+        scrollbar-width: thin;
+        scrollbar-color: var(--accent-primary) var(--bg-secondary);
+    }
+    
     /* Remove Symbol Modal */
     .remove-symbol-modal {
         position: fixed;
@@ -461,6 +490,9 @@
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding: 0 20px;">
         <h2 style="margin: 0;">Portfolio Journal</h2>
         <div style="display: flex; gap: 10px;">
+            <button id="add-retroactive-date-btn" class="btn">
+                📅 Add Historical Date
+            </button>
             <button id="add-symbol-btn" class="btn">
                 ➕ Add Symbol
             </button>
@@ -533,6 +565,14 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Add click handlers to data cells to show exact value
     setupCellClickHandlers();
+    // Add Retroactive Date button handler
+    const addRetroactiveDateBtn = document.getElementById('add-retroactive-date-btn');
+    if (addRetroactiveDateBtn) {
+        addRetroactiveDateBtn.addEventListener('click', function() {
+            showRetroactiveDateModal();
+        });
+    }
+    
     // Add Symbol button handler
     const addSymbolBtn = document.getElementById('add-symbol-btn');
     if (addSymbolBtn) {
@@ -1349,6 +1389,255 @@ document.addEventListener('DOMContentLoaded', function() {
         dataHeaders.forEach(header => {
             header.style.borderLeft = '';
             header.style.opacity = '1';
+        });
+    }
+    
+    // Retroactive Date Modal Function
+    function showRetroactiveDateModal() {
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className = 'value-popup-overlay';
+        
+        // Create modal
+        const modal = document.createElement('div');
+        modal.className = 'value-popup';
+        modal.style.width = '500px';
+        modal.style.minHeight = '350px';
+        
+        modal.innerHTML = `
+            <h3 style="text-align: center;">📅 Add Historical Date</h3>
+            <p style="color: var(--text-secondary); margin-bottom: 20px; text-align: center;">
+                Fetch closing prices for all tracked symbols for a specific date
+            </p>
+            <div class="form-group" style="margin-bottom: 25px;">
+                <label for="retroactive-date-input" style="display: block; margin-bottom: 10px; font-weight: 600; color: var(--text-primary);">
+                    Select Date
+                </label>
+                <input type="date" 
+                       id="retroactive-date-input" 
+                       style="width: 100%; padding: 14px; font-size: 1.1em; background-color: var(--bg-tertiary); border: 2px solid var(--border-primary); border-radius: 4px; color: var(--text-primary);"
+                       max="${new Date().toISOString().split('T')[0]}">
+                <small style="color: var(--text-muted); display: block; margin-top: 8px;">
+                    The system will fetch Yahoo Finance closing prices for this date
+                </small>
+                <div id="skipped-hint" style="color: var(--text-muted); margin-top: 6px; font-size: 0.9em;"></div>
+            </div>
+            <div id="retroactive-status" style="display: none; padding: 15px; background-color: var(--bg-tertiary); border-radius: 4px; margin-bottom: 20px;">
+                <div id="retroactive-message" style="font-weight: 600; margin-bottom: 10px;"></div>
+                <div id="retroactive-details" style="font-size: 0.9em; color: var(--text-secondary); margin-bottom: 10px;"></div>
+                <div id="retroactive-log" style="display: none; max-height: 200px; overflow-y: auto; background-color: var(--bg-primary); padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85em; border: 1px solid var(--border-primary);"></div>
+            </div>
+            <div class="button-group" id="button-container">
+                <button class="save-btn" id="fetch-retroactive-btn">Fetch Prices</button>
+                <button class="cancel-btn" id="cancel-retroactive-btn">Cancel</button>
+            </div>
+        `;
+        
+        document.body.appendChild(overlay);
+        document.body.appendChild(modal);
+        
+        const dateInput = modal.querySelector('#retroactive-date-input');
+        const fetchBtn = modal.querySelector('#fetch-retroactive-btn');
+        const cancelBtn = modal.querySelector('#cancel-retroactive-btn');
+        const statusDiv = modal.querySelector('#retroactive-status');
+        const messageDiv = modal.querySelector('#retroactive-message');
+        const detailsDiv = modal.querySelector('#retroactive-details');
+        const logDiv = modal.querySelector('#retroactive-log');
+        
+        // Set default date to yesterday
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        dateInput.value = yesterday.toISOString().split('T')[0];
+        
+        // Focus date input
+        dateInput.focus();
+        
+        const closeModal = () => {
+            overlay.remove();
+            modal.remove();
+        };
+        
+        // Fetch prices handler
+        fetchBtn.addEventListener('click', async function() {
+            const selectedDate = dateInput.value;
+            
+            if (!selectedDate) {
+                alert('Please select a date');
+                return;
+            }
+            
+            // Disable input and button
+            dateInput.disabled = true;
+            fetchBtn.disabled = true;
+            fetchBtn.textContent = 'Fetching...';
+            
+            // Show status
+            statusDiv.style.display = 'block';
+            messageDiv.textContent = '⏳ Fetching prices...';
+            messageDiv.style.color = 'var(--text-secondary)';
+            detailsDiv.textContent = 'This may take a moment while we fetch prices from Yahoo Finance.';
+            logDiv.style.display = 'none';
+            logDiv.innerHTML = '';
+            
+            try {
+                const formData = new FormData();
+                formData.append('date', selectedDate);
+                
+                // Start SSE stream for real-time updates (fallback to polling if blocked)
+                let sseClosed = false;
+                try {
+                    const evSrc = new EventSource('/journal/add-retroactive-date/stream');
+                    evSrc.onmessage = (e) => {
+                        try {
+                            const obj = JSON.parse(e.data);
+                            if (obj && obj.line) {
+                                logDiv.style.display = 'block';
+                                const html = obj.line.startsWith('✓') ?
+                                    `<div style="color: var(--success-bg);">${obj.line}</div>` :
+                                    obj.line.startsWith('✗') ?
+                                    `<div style="color: var(--error-bg);">${obj.line}</div>` :
+                                    `<div style="color: var(--text-secondary);">${obj.line}</div>`;
+                                logDiv.insertAdjacentHTML('beforeend', html);
+                                if (obj.total) {
+                                    const pct = Math.floor((obj.processed / obj.total) * 100);
+                                    // update or append progress footer
+                                    let footer = logDiv.querySelector('#progress-footer');
+                                    if (!footer) {
+                                        footer = document.createElement('div');
+                                        footer.id = 'progress-footer';
+                                        footer.style.color = 'var(--text-muted)';
+                                        footer.style.marginTop = '6px';
+                                        logDiv.appendChild(footer);
+                                    }
+                                    footer.textContent = `Progress: ${obj.processed}/${obj.total} (${pct}%)`;
+                                }
+                                logDiv.scrollTop = logDiv.scrollHeight;
+                            }
+                        } catch(_) {}
+                    };
+                    evSrc.addEventListener('done', (e) => {
+                        evSrc.close();
+                        sseClosed = true;
+                        // Flip UI to success when streaming completes
+                        messageDiv.textContent = '✓ Success!';
+                        messageDiv.style.color = 'var(--success-bg)';
+                        try {
+                            const summary = JSON.parse(e.data || '{}');
+                            if (summary && (summary.symbols_fetched !== undefined || summary.total_symbols !== undefined)) {
+                                detailsDiv.innerHTML = `Fetched <strong>${summary.symbols_fetched ?? ''}/${summary.total_symbols ?? ''}</strong> stock symbols for ${selectedDate}`;
+                            }
+                        } catch(_) {}
+                        // Enable View/Close buttons
+                        const buttonContainer = modal.querySelector('#button-container');
+                        if (buttonContainer) {
+                            buttonContainer.innerHTML = `
+                                <button class="save-btn" style="flex: 1;" id="view-journal-btn">View Journal</button>
+                                <button class="cancel-btn" style="flex: 1;" id="close-modal-btn">Close</button>
+                            `;
+                            const viewBtn = document.getElementById('view-journal-btn');
+                            const closeBtn = document.getElementById('close-modal-btn');
+                            if (viewBtn) viewBtn.addEventListener('click', () => { window.location.href = '/journal'; });
+                            if (closeBtn) closeBtn.addEventListener('click', () => closeModal());
+                        }
+                    });
+                    evSrc.onerror = () => {
+                        try { evSrc.close(); } catch(_) {}
+                        sseClosed = true;
+                    };
+                } catch(_) {}
+
+                const response = await fetch('/journal/add-retroactive-date', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to fetch prices');
+                }
+
+                // Keep status as fetching (yellow) until the stream signals completion
+                messageDiv.textContent = '⏳ Fetching prices...';
+                messageDiv.style.color = 'var(--warning-bg)';
+                let detailsHtml = `
+                    Fetched <strong>${data.symbols_fetched}/${data.total_symbols}</strong> stock symbols for ${data.date}
+                `;
+                
+                if (data.skipped_symbols && data.skipped_symbols.length > 0) {
+                    detailsHtml += `<br><span style="color: var(--text-muted);">Skipped: ${data.skipped_symbols.join(', ')}</span>`;
+                    const hint = document.getElementById('skipped-hint');
+                    if (hint) hint.textContent = `Skipped columns this run: ${data.skipped_symbols.join(', ')}`;
+                }
+                
+                if (data.failed_symbols && data.failed_symbols.length > 0) {
+                    detailsHtml += `<br><span style="color: var(--warning-bg);">⚠ ${data.failed_symbols.length} symbols failed</span>`;
+                }
+                
+                detailsDiv.innerHTML = detailsHtml;
+                
+                // Show detailed fetch log
+                if (data.fetch_log && data.fetch_log.length > 0) {
+                    logDiv.style.display = 'block';
+                    logDiv.innerHTML = data.fetch_log.map(log => {
+                        if (log.startsWith('✓')) {
+                            return `<div style="color: var(--success-bg); margin: 2px 0;">${log}</div>`;
+                        } else if (log.startsWith('✗')) {
+                            return `<div style="color: var(--error-bg); margin: 2px 0;">${log}</div>`;
+                        } else {
+                            return `<div style="color: var(--text-secondary); margin: 2px 0;">${log}</div>`;
+                        }
+                    }).join('');
+                    
+                    // Scroll to bottom
+                    logDiv.scrollTop = logDiv.scrollHeight;
+                }
+                
+                // Show success toast
+                showToast(`✓ Added ${data.symbols_fetched} symbols for ${data.date}`, 'success');
+                
+                // Change buttons to just "Close" and "View Journal"
+                const buttonContainer = modal.querySelector('#button-container');
+                buttonContainer.innerHTML = `
+                    <button class="save-btn" style="flex: 1;" id="view-journal-btn">View Journal</button>
+                    <button class="cancel-btn" style="flex: 1;" id="close-modal-btn">Close</button>
+                `;
+                // View Journal should refresh table in place (no full reload) by navigating to /journal
+                document.getElementById('view-journal-btn').addEventListener('click', () => {
+                    window.location.href = '/journal';
+                });
+                document.getElementById('close-modal-btn').addEventListener('click', () => closeModal());
+                
+            } catch (error) {
+                console.error('Error fetching retroactive date:', error);
+                messageDiv.textContent = '✗ Error';
+                messageDiv.style.color = 'var(--error-bg)';
+                detailsDiv.textContent = error.message;
+                
+                // Re-enable controls
+                dateInput.disabled = false;
+                fetchBtn.disabled = false;
+                fetchBtn.textContent = 'Fetch Prices';
+                
+                showToast('✗ Error: ' + error.message, 'error');
+            } finally {
+                // stop polling if it was started
+                try { clearInterval(poller); } catch (_) {}
+            }
+        });
+        
+        cancelBtn.addEventListener('click', closeModal);
+        overlay.addEventListener('click', closeModal);
+        
+        // Enter key to submit
+        dateInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                fetchBtn.click();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                closeModal();
+            }
         });
     }
 });

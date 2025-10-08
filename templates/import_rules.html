@@ -154,10 +154,6 @@
 <div class="rules-header">
     <h2>📋 Import Rules Configuration</h2>
     <p>Configure how stock holdings CSV imports are processed and which symbols to track.</p>
-    <div style="background-color: var(--warning-bg); border-left: 4px solid #ff9800; padding: 15px; margin-top: 15px; border-radius: 4px;">
-        <strong style="color: #ff9800;">⚠️ Case Sensitivity Notice:</strong>
-        <span style="color: var(--text-primary);">All symbol names and rules are <strong>case-sensitive</strong>. "CASH" and "cash" are treated as different symbols. Please ensure consistent capitalization when configuring rules.</span>
-    </div>
 </div>
 
 <!-- Symbol Mappings Section -->
@@ -165,7 +161,8 @@
     <div class="rules-section">
         <h3>🔗 Symbol Mappings</h3>
         <div class="section-description">
-            <strong>Purpose:</strong> Map journal column names to Yahoo Finance ticker symbols. Use this when your preferred display name differs from the actual market symbol (e.g., "WTI" → "CL=F").
+            <strong>Purpose:</strong> Map journal column names to Yahoo Finance ticker symbols. Use this when your preferred display name differs from the actual market symbol (e.g., "WTI" → "CL=F").<br>
+            <span style="color: var(--warning-bg); font-size: 0.9em;">⚠️ Symbol names are case-sensitive</span>
         </div>
         
         {% if symbol_mappings %}
@@ -209,7 +206,8 @@
     <div class="rules-section">
         <h3>📡 Auto-Fetch Symbols</h3>
         <div class="section-description">
-            <strong>Purpose:</strong> Automatically fetch market prices for these symbols during CSV import, even if they're not present in the import file. Useful for tracking benchmark symbols like IBIT for comparison.
+            <strong>Purpose:</strong> Automatically fetch market prices for these symbols during CSV import, even if they're not present in the import file. Useful for tracking benchmark symbols like IBIT for comparison.<br>
+            <span style="color: var(--warning-bg); font-size: 0.9em;">⚠️ Symbol names are case-sensitive</span>
         </div>
         
         {% if auto_fetch_symbols %}
@@ -263,7 +261,8 @@
     <div class="rules-section">
         <h3>🧮 Calculated Columns</h3>
         <div class="section-description">
-            <strong>Purpose:</strong> Define columns computed from CSV data using formulas. For example, sum all holdings from a specific account or extract specific account values. These won't fetch prices from Yahoo Finance.
+            <strong>Purpose:</strong> Define columns computed from CSV data using formulas. For example, sum all holdings from a specific account or extract specific account values. These won't fetch prices from Yahoo Finance.<br>
+            <span style="color: var(--warning-bg); font-size: 0.9em;">⚠️ Column and symbol names are case-sensitive</span>
         </div>
         
         {% if calculated_columns %}
@@ -317,7 +316,8 @@
     <div class="rules-section">
         <h3>🚫 Excluded Symbols</h3>
         <div class="section-description">
-            <strong>Purpose:</strong> Hide symbols from the journal display. These symbols can still be used in calculated column formulas, but won't appear as separate columns. Useful for intermediate values like VMFXX.
+            <strong>Purpose:</strong> Hide symbols from the journal display. These symbols can still be used in calculated column formulas, but won't appear as separate columns. Useful for intermediate values like VMFXX.<br>
+            <span style="color: var(--warning-bg); font-size: 0.9em;">⚠️ Symbol names are case-sensitive</span>
         </div>
         
         {% if excluded_symbols %}
@@ -362,7 +362,8 @@
         <div class="section-description">
             <strong>Purpose:</strong> Automatically scale (divide) column values during import. For example, convert $2,000,000 to $2,000 by removing 3 digits (÷1000). Useful for maintaining consistency with historical data that was already scaled.
             <br><br>
-            <strong style="color: var(--warning-bg);">⚠️ Warning:</strong> This permanently modifies values during import. Once scaled, original values cannot be recovered.
+            <strong style="color: var(--warning-bg);">⚠️ Warning:</strong> This permanently modifies values during import. Once scaled, original values cannot be recovered.<br>
+            <span style="color: var(--warning-bg); font-size: 0.9em;">⚠️ Column names are case-sensitive</span>
         </div>
         
         {% if value_scaling_rules %}
@@ -426,7 +427,8 @@
         <div class="section-description">
             <strong>Purpose:</strong> Populate historical closing prices for a symbol over a specified date range. Use this when you want to start tracking a new symbol with its complete price history, or to update data for specific periods.
             <br><br>
-            <strong style="color: var(--accent-primary);">Data Modes:</strong> Choose <strong>Preserve</strong> to only fill missing dates (safe), or <strong>Overwrite</strong> to replace all data in the range (use with caution).
+            <strong style="color: var(--accent-primary);">Data Modes:</strong> Choose <strong>Preserve</strong> to only fill missing dates (safe), or <strong>Overwrite</strong> to replace all data in the range (use with caution).<br>
+            <span style="color: var(--warning-bg); font-size: 0.9em;">⚠️ Symbol names are case-sensitive</span>
         </div>
         
         <form id="backfillForm" onsubmit="submitBackfill(event)" style="margin-top: 20px;">

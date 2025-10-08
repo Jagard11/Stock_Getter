@@ -10,9 +10,10 @@ from pathlib import Path
 from typing import Optional
 
 import yfinance as yf
+import asyncio
 
-from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Form, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -30,6 +31,65 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Initialize database
 db = Database()
+
+# Simple in-memory progress log for retroactive fetch operations
+# Note: Single-user/simple scenario; replace with per-user/session storage if needed
+fetch_progress_state = {
+    "log": [],
+    "in_progress": False,
+    "result": None,
+    "processed": 0,
+    "total": 0
+}
+
+
+@app.get("/journal/add-retroactive-date/progress")
+async def retroactive_progress():
+    """Return current progress log for the retroactive fetch operation."""
+    payload = {
+        "in_progress": fetch_progress_state["in_progress"],
+        "log": fetch_progress_state["log"][-200:],
+        "processed": fetch_progress_state.get("processed", 0),
+        "total": fetch_progress_state.get("total", 0)
+    }
+    if fetch_progress_state.get("result"):
+        payload.update(fetch_progress_state["result"])  # includes summary fields
+        payload["done"] = True
+    else:
+        payload["done"] = not fetch_progress_state["in_progress"]
+    return JSONResponse(payload, headers={
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    })
+
+
+@app.get("/journal/add-retroactive-date/stream")
+async def retroactive_progress_stream():
+    """Server-Sent Events stream of progress lines for the retroactive fetch."""
+    async def event_generator():
+        last_index = 0
+        yield "event: hello\ndata: {}\n\n"
+        while fetch_progress_state["in_progress"] or last_index < len(fetch_progress_state["log"]):
+            if len(fetch_progress_state["log"]) > last_index:
+                new_lines = fetch_progress_state["log"][last_index:]
+                last_index = len(fetch_progress_state["log"])
+                for line in new_lines:
+                    payload = json.dumps({
+                        "line": line,
+                        "processed": fetch_progress_state.get("processed", 0),
+                        "total": fetch_progress_state.get("total", 0)
+                    })
+                    yield f"data: {payload}\n\n"
+            await asyncio.sleep(0.4)
+        summary = fetch_progress_state.get("result") or {}
+        yield f"event: done\ndata: {json.dumps(summary)}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        "Pragma": "no-cache",
+        "Expires": "0"
+    })
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -836,7 +896,7 @@ async def remove_symbol(symbol: str = Form(...)):
 
 
 @app.post("/journal/add-retroactive-date")
-async def add_retroactive_date(date: str = Form(...)):
+async def add_retroactive_date(date: str = Form(...), background_tasks: BackgroundTasks = None):
     """Add closing prices for all tracked symbols for a specific retroactive date.
     
     Args:
@@ -855,41 +915,132 @@ async def add_retroactive_date(date: str = Form(...)):
         # Format date with day name
         formatted_date = date_obj.strftime('%a %Y-%m-%d')
         
+        # Reset progress log and mark as running
+        fetch_progress_state["log"] = []
+        fetch_progress_state["in_progress"] = True
+
+        # Ensure the portfolio date row exists for this date (needed for DB upserts)
+        try:
+            conn = db.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                    INSERT OR IGNORE INTO portfolio_dates (date, imported_at)
+                    VALUES (?, ?)
+                """,
+                (formatted_date, datetime.now().isoformat())
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
         # Get all currently tracked symbols
         _, existing_symbols = db.get_portfolio_data()
         
         if not existing_symbols:
             raise HTTPException(status_code=400, detail="No symbols are currently tracked")
         
-        # Fetch prices for each symbol
-        symbols_fetched = 0
-        failed_symbols = []
+        # Filter out calculated columns and excluded symbols
+        calculated_columns = db.get_calculated_columns()
+        calculated_column_names = {col['column_name'] for col in calculated_columns}
+        excluded_symbols_list = db.get_excluded_symbols()
+        excluded_symbol_names = {sym['symbol'] for sym in excluded_symbols_list}
         
-        for symbol in existing_symbols:
-            result = fetch_yahoo_price(symbol, formatted_date, db)
-            if result:
-                # Update portfolio value for this date and symbol
-                success = db.update_portfolio_value(formatted_date, symbol, result['price'])
-                if success:
-                    symbols_fetched += 1
-                    print(f"  ✓ Fetched {symbol}: ${result['price']:.2f}")
+        # Common non-stock column names that should never be fetched
+        non_stock_columns = {
+            'Total', 'total', 'TOTAL',
+            'Cash', 'cash', 'CASH',
+            'E-Trade', 'e-trade', 'E-TRADE', 'etrade', 'ETRADE',
+            'Subtotal', 'subtotal', 'SUBTOTAL',
+            'Sum', 'sum', 'SUM'
+        }
+        
+        # Filter symbols to only fetch actual stock tickers
+        symbols_to_fetch = [
+            symbol for symbol in existing_symbols 
+            if symbol not in calculated_column_names 
+            and symbol not in excluded_symbol_names
+            and symbol not in non_stock_columns
+        ]
+        
+        if not symbols_to_fetch:
+            raise HTTPException(status_code=400, detail="No stock symbols to fetch (all are calculated or excluded)")
+        
+        # Work function to run in background so the request can return immediately
+        def _do_work():
+            symbols_fetched_local = 0
+            failed_symbols_local = []
+            fetch_log_local = []
+            fetch_progress_state["total"] = len(symbols_to_fetch)
+            fetch_progress_state["processed"] = 0
+            for symbol in symbols_to_fetch:
+                # Progress: announce attempt
+                attempt_msg = f"… Fetching {symbol} for {formatted_date}"
+                print(f"  {attempt_msg}")
+                fetch_progress_state["log"].append(attempt_msg)
+                result = fetch_yahoo_price(symbol, formatted_date, db)
+                if result:
+                    # Update portfolio value for this date and symbol
+                    # Ensure date row exists (defensive in case of race/rollback)
+                    try:
+                        conn2 = db.get_connection()
+                        cur2 = conn2.cursor()
+                        cur2.execute(
+                            """
+                                INSERT OR IGNORE INTO portfolio_dates (date, imported_at)
+                                VALUES (?, ?)
+                            """,
+                            (formatted_date, datetime.now().isoformat())
+                        )
+                        conn2.commit()
+                    finally:
+                        conn2.close()
+
+                    success = db.update_portfolio_value(formatted_date, symbol, result['price'])
+                    if success:
+                        symbols_fetched_local += 1
+                        log_entry = f"✓ Fetched {symbol}: ${result['price']:.2f}"
+                        if result.get('yahoo_symbol') and result['yahoo_symbol'] != symbol:
+                            log_entry += f" (using {result['yahoo_symbol']})"
+                        fetch_log_local.append(log_entry)
+                        print(f"  {log_entry}")
+                        fetch_progress_state["log"].append(log_entry)
+                    else:
+                        fail_msg = f"{symbol} (database error)"
+                        failed_symbols_local.append(fail_msg)
+                        err_entry = f"✗ Failed {symbol}: database error"
+                        fetch_log_local.append(err_entry)
+                        fetch_progress_state["log"].append(err_entry)
                 else:
-                    failed_symbols.append(f"{symbol} (database error)")
-            else:
-                failed_symbols.append(f"{symbol} (no data)")
-                print(f"  ✗ Failed to fetch {symbol}")
-        
-        result_message = f"Fetched {symbols_fetched}/{len(existing_symbols)} symbols"
-        if failed_symbols:
-            result_message += f". Failed: {', '.join(failed_symbols)}"
-        
+                    fail_msg = f"{symbol} (no data)"
+                    failed_symbols_local.append(fail_msg)
+                    err_entry = f"✗ Failed {symbol}: no data from Yahoo Finance"
+                    fetch_log_local.append(err_entry)
+                    fetch_progress_state["log"].append(err_entry)
+                    print(f"  ✗ Failed to fetch {symbol}")
+                # update processed count visible to clients
+                fetch_progress_state["processed"] = fetch_progress_state.get("processed", 0) + 1
+
+            # Write summary
+            # Summary stored for client; message used only for logs
+            result_message = f"Fetched {symbols_fetched_local}/{len(symbols_to_fetch)} symbols"
+            if failed_symbols_local:
+                result_message += f". Failed: {', '.join(failed_symbols_local)}"
+            fetch_progress_state["in_progress"] = False
+            fetch_progress_state["result"] = {
+                "symbols_fetched": symbols_fetched_local,
+                "total_symbols": len(symbols_to_fetch)
+            }
+
+        # Kick off background work; always use a threadpool so POST returns immediately
+        background_tasks.add_task(_do_work)
+        # Return ACK; UI will stream/poll for progress and completion
         return {
             "success": True,
+            "started": True,
             "date": formatted_date,
-            "symbols_fetched": symbols_fetched,
-            "total_symbols": len(existing_symbols),
-            "failed_symbols": failed_symbols,
-            "message": result_message
+            "total_symbols": len(symbols_to_fetch),
+            "skipped_symbols": [s for s in existing_symbols if s not in symbols_to_fetch]
         }
         
     except HTTPException:
@@ -897,6 +1048,8 @@ async def add_retroactive_date(date: str = Form(...)):
     except Exception as e:
         import traceback
         traceback.print_exc()
+        fetch_progress_state["in_progress"] = False
+        fetch_progress_state["result"] = None
         raise HTTPException(status_code=500, detail=f"Error adding retroactive date: {str(e)}")
 
 
@@ -977,6 +1130,8 @@ async def backfill_historical_data(
         for date_index, row in hist.iterrows():
             trading_date = date_index.strftime('%a %Y-%m-%d')
             close_price = float(row['Close'])
+            # update processed count visible to clients
+            fetch_progress_state["processed"] = fetch_progress_state.get("processed", 0) + 1
             
             if first_date is None:
                 first_date = trading_date
