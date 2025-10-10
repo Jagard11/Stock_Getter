@@ -979,11 +979,17 @@ document.addEventListener('DOMContentLoaded', function() {
             const columnHeader = table.querySelectorAll('th')[cell.cellIndex].textContent.trim();
             const rowDate = cell.parentElement.querySelector('td:first-child').textContent.trim();
             
+            // Ctrl+Click shortcut: directly open edit mode
+            if (e.ctrlKey || e.metaKey) {
+                showValuePopup(value, columnHeader, rowDate, true);
+                return;
+            }
+            
             showValuePopup(value, columnHeader, rowDate);
         });
     }
 
-    function showValuePopup(value, column, date) {
+    function showValuePopup(value, column, date, startInEditMode = false) {
         // Create overlay
         const overlay = document.createElement('div');
         overlay.className = 'value-popup-overlay';
@@ -1003,7 +1009,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <h3 style="text-align: center;">${column}</h3>
             <p style="color: var(--text-secondary); margin: 0; text-align: center;">${date}</p>
             <div class="exact-value" id="value-display" style="text-align: center;">$${formattedValue}</div>
-            <p class="edit-hint">Double-click to edit • Ctrl+C to copy</p>
+            <p class="edit-hint">Double-click to edit • Ctrl+C to copy • Ctrl+click to edit directly</p>
             <button class="btn close-btn" id="close-btn">Close</button>
         `;
         
@@ -1014,8 +1020,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const closeBtn = popup.querySelector('#close-btn');
         const editHint = popup.querySelector('.edit-hint');
         
-        // Double-click to edit
-        valueDisplay.addEventListener('dblclick', function() {
+        // Function to enter edit mode
+        const enterEditMode = function() {
             if (isEditing) return;
             isEditing = true;
             
@@ -1153,7 +1159,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     cancelEdit();
                 }
             });
-        });
+        };
+        
+        // Double-click to edit
+        valueDisplay.addEventListener('dblclick', enterEditMode);
         
         const closePopup = () => {
             overlay.remove();
@@ -1220,6 +1229,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         };
         document.addEventListener('keydown', keyHandler);
+        
+        // If startInEditMode is true, automatically enter edit mode
+        if (startInEditMode) {
+            // Use setTimeout to ensure DOM is fully ready
+            setTimeout(() => {
+                enterEditMode();
+            }, 0);
+        }
     }
 
 
