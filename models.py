@@ -1900,6 +1900,179 @@ class Database:
         
         return [dict(row) for row in rows]
     
+    def import_dividend_csv(self, csv_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Import dividend payment data from CSV.
+        
+        Expected CSV format:
+        Date,Symbol,Amount,Shares,DividendPerShare,Account,Notes
+        
+        Or table format:
+        Date,AAPL,MSFT,GOOGL,...
+        2024-01-15,125.50,85.30,
+        
+        Args:
+            csv_data: List of dictionaries representing CSV rows
+        
+        Returns:
+            Dictionary with import statistics
+        """
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        payments_imported = 0
+        symbols_added = 0
+        errors = []
+        
+        try:
+            # Determine CSV format
+            if csv_data and 'Symbol' in csv_data[0]:
+                # Detailed format: Date, Symbol, Amount, Shares, DividendPerShare, Account, Notes
+                for row in csv_data:
+                    try:
+                        date = row.get('Date', '').strip()
+                        symbol = row.get('Symbol', '').strip().upper()
+                        amount_str = row.get('Amount', '').strip()
+                        shares_str = row.get('Shares', '').strip()
+                        div_per_share_str = row.get('DividendPerShare', '').strip()
+                        account = row.get('Account', '').strip()
+                        notes = row.get('Notes', '').strip()
+                        
+                        if not date or not symbol or not amount_str:
+                            continue
+                        
+                        amount = float(amount_str.replace('$', '').replace(',', ''))
+                        shares = float(shares_str.replace(',', '')) if shares_str else None
+                        div_per_share = float(div_per_share_str.replace('$', '').replace(',', '')) if div_per_share_str else None
+                        
+                        # Add payment (will fail silently if duplicate)
+                        now = datetime.now().isoformat()
+                        cursor.execute("""
+                            INSERT OR IGNORE INTO dividend_payments 
+                            (symbol, payment_date, amount_paid, shares_held, dividend_per_share, 
+                             account_number, notes, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (symbol, date, amount, shares, div_per_share, 
+                              account if account else None, notes if notes else None, now))
+                        
+                        if cursor.rowcount > 0:
+                            payments_imported += 1
+                        
+                    except Exception as e:
+                        errors.append(f"Row error: {str(e)}")
+                        continue
+            else:
+                # Table format: Date column, then symbol columns
+                # First row determines which columns are symbols
+                if not csv_data:
+                    raise ValueError("CSV file is empty")
+                
+                first_row = csv_data[0]
+                symbols = [col for col in first_row.keys() if col.lower() != 'date']
+                
+                for row in csv_data:
+                    try:
+                        date = row.get('Date', '').strip()
+                        if not date:
+                            continue
+                        
+                        for symbol in symbols:
+                            amount_str = row.get(symbol, '').strip()
+                            if not amount_str or amount_str == '-':
+                                continue
+                            
+                            try:
+                                amount = float(amount_str.replace('$', '').replace(',', ''))
+                                
+                                # Add payment (will fail silently if duplicate)
+                                now = datetime.now().isoformat()
+                                cursor.execute("""
+                                    INSERT OR IGNORE INTO dividend_payments 
+                                    (symbol, payment_date, amount_paid, shares_held, dividend_per_share, 
+                                     account_number, notes, created_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                """, (symbol.upper(), date, amount, None, None, None, None, now))
+                                
+                                if cursor.rowcount > 0:
+                                    payments_imported += 1
+                                    
+                            except (ValueError, TypeError):
+                                continue
+                        
+                    except Exception as e:
+                        errors.append(f"Row error: {str(e)}")
+                        continue
+            
+            conn.commit()
+            
+            return {
+                'success': True,
+                'payments_imported': payments_imported,
+                'errors': errors
+            }
+            
+        except Exception as e:
+            conn.rollback()
+            return {
+                'success': False,
+                'error': str(e),
+                'payments_imported': 0,
+                'errors': errors
+            }
+        finally:
+            conn.close()
+    
+    def export_dividend_csv(self) -> str:
+        """Export dividend payment data to CSV format.
+        
+        Returns CSV in table format with dates as rows and symbols as columns.
+        """
+        import io
+        import csv
+        
+        # Get all tracked symbols
+        tracking_symbols = self.get_dividend_tracking_symbols()
+        symbols = [t['symbol'] for t in tracking_symbols]
+        
+        if not symbols:
+            return "No dividend tracking data to export"
+        
+        # Get all payments
+        all_payments = self.get_dividend_payments()
+        
+        # Organize payments by date and symbol
+        payments_by_date = {}
+        for payment in all_payments:
+            date = payment['payment_date']
+            symbol = payment['symbol']
+            if date not in payments_by_date:
+                payments_by_date[date] = {}
+            payments_by_date[date][symbol] = payment['amount_paid']
+        
+        # Sort dates
+        dates = sorted(payments_by_date.keys(), reverse=True)
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header row
+        header = ['Date'] + symbols
+        writer.writerow(header)
+        
+        # Write data rows
+        for date in dates:
+            row = [date]
+            for symbol in symbols:
+                amount = payments_by_date[date].get(symbol)
+                row.append(amount if amount is not None else '')
+            writer.writerow(row)
+        
+        # Get CSV content
+        csv_content = output.getvalue()
+        output.close()
+        
+        return csv_content
+    
     def export_journal_to_csv(self) -> str:
         """Export portfolio journal data to CSV format.
         

@@ -841,6 +841,15 @@
             if (urlParams.has('payment_updated')) {
                 showToast('✓ Payment information updated!', 'success');
             }
+            if (urlParams.has('imported')) {
+                const count = urlParams.get('imported');
+                const errors = urlParams.get('errors');
+                let message = `✓ Imported ${count} dividend payment(s)!`;
+                if (errors) {
+                    message += ` (${errors} errors)`;
+                }
+                showToast(message, 'success');
+            }
             
             // Error messages
             if (urlParams.has('error')) {

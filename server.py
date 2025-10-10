@@ -1321,6 +1321,74 @@ async def delete_dividend_payment_route(payment_id: int):
     return {"success": True}
 
 
+@app.post("/dividend-payments/import")
+async def import_dividend_csv(file: UploadFile = File(...)):
+    """Import dividend payment data from CSV file.
+    
+    Accepts two CSV formats:
+    1. Detailed format: Date,Symbol,Amount,Shares,DividendPerShare,Account,Notes
+    2. Table format: Date,AAPL,MSFT,GOOGL (amounts in cells)
+    """
+    try:
+        # Read CSV file
+        contents = await file.read()
+        csv_text = contents.decode('utf-8')
+        csv_reader = csv.DictReader(io.StringIO(csv_text))
+        
+        # Convert to list of dictionaries
+        csv_data = list(csv_reader)
+        
+        # Import into database
+        result = db.import_dividend_csv(csv_data)
+        
+        if not result.get('success', False):
+            error_msg = result.get('error', 'Unknown error')
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        payments_imported = result['payments_imported']
+        errors = result.get('errors', [])
+        
+        # Build redirect URL with status
+        redirect_url = f"/dividend-payments?imported={payments_imported}"
+        if errors:
+            redirect_url += f"&errors={len(errors)}"
+        
+        return RedirectResponse(
+            url=redirect_url,
+            status_code=303
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error importing CSV: {str(e)}")
+
+
+@app.get("/dividend-payments/export")
+async def export_dividend_csv():
+    """Export dividend payment data to CSV file."""
+    try:
+        # Get CSV content from database
+        csv_content = db.export_dividend_csv()
+        
+        # Generate filename with current date
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"dividend_payments_{timestamp}.csv"
+        
+        # Convert string to bytes for proper streaming
+        csv_bytes = csv_content.encode('utf-8')
+        
+        # Return CSV as downloadable file
+        return StreamingResponse(
+            io.BytesIO(csv_bytes),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting dividend data: {str(e)}")
+
+
 @app.post("/import-rules/backfill")
 async def backfill_historical_data(
     symbol: str = Form(...),

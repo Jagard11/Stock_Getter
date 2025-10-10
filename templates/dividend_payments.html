@@ -273,6 +273,15 @@
             <button id="add-payment-btn" class="btn">
                 💰 Add Payment
             </button>
+            <form action="/dividend-payments/import" method="post" enctype="multipart/form-data" style="display: inline; margin: 0;">
+                <input type="file" name="file" accept=".csv" required style="display: none;" id="dividend-csv-file-input" onchange="this.form.submit()">
+                <button type="button" class="btn" onclick="document.getElementById('dividend-csv-file-input').click()">
+                    📊 Import CSV
+                </button>
+            </form>
+            <button id="export-btn" class="btn btn-secondary" onclick="window.location.href='/dividend-payments/export'">
+                💾 Export CSV
+            </button>
         </div>
     </div>
 
