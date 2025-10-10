@@ -1396,10 +1396,41 @@ document.addEventListener('DOMContentLoaded', function() {
         document.addEventListener('keydown', escapeHandler);
     }
 
+    function recalculateColumnMaxValue(columnIndex) {
+        // Get all cells in this column (excluding header)
+        const tbody = table.querySelector('tbody');
+        const rows = tbody.querySelectorAll('tr');
+        
+        // Find max value in column
+        let maxValue = -Infinity;
+        const cellsInColumn = [];
+        
+        rows.forEach(row => {
+            const cell = row.cells[columnIndex];
+            if (cell) {
+                const rawValue = parseFloat(cell.getAttribute('data-raw-value'));
+                if (!isNaN(rawValue)) {
+                    cellsInColumn.push({ cell, value: rawValue });
+                    maxValue = Math.max(maxValue, rawValue);
+                }
+            }
+        });
+        
+        // Update max-value class for all cells in column
+        cellsInColumn.forEach(({ cell, value }) => {
+            if (value === maxValue && maxValue > -Infinity) {
+                cell.classList.add('max-value');
+            } else {
+                cell.classList.remove('max-value');
+            }
+        });
+    }
+
     async function directFetchPrice(cell, symbol, date) {
-        // Store original cell content
+        // Store original cell content and column index
         const originalContent = cell.innerHTML;
         const originalValue = cell.getAttribute('data-value');
+        const columnIndex = cell.cellIndex;
         
         // Animation frames
         const frames = ['OOO', 'O O', '| |', '0 0', 'OOO'];
@@ -1469,6 +1500,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 cell.style.fontSize = '';
                 cell.style.fontWeight = '';
                 cell.style.color = '';
+                
+                // Recalculate max value highlighting for this column
+                recalculateColumnMaxValue(columnIndex);
                 
                 // Brief highlight to show update
                 cell.style.backgroundColor = 'var(--accent-primary)';
