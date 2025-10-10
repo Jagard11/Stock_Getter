@@ -963,6 +963,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             
+            // Alt+Click shortcut: directly fetch price
+            if (e.altKey) {
+                const columnHeader = table.querySelectorAll('th')[cell.cellIndex].textContent.trim();
+                const rowDate = cell.parentElement.querySelector('td:first-child').textContent.trim();
+                
+                // Trigger direct fetch
+                directFetchPrice(cell, columnHeader, rowDate);
+                return;
+            }
+            
             // Handle value column clicks
             const value = cell.getAttribute('data-value') || '0.00';
             
@@ -1367,6 +1377,117 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         };
         document.addEventListener('keydown', escapeHandler);
+    }
+
+    async function directFetchPrice(cell, symbol, date) {
+        // Store original cell content
+        const originalContent = cell.innerHTML;
+        const originalValue = cell.getAttribute('data-value');
+        
+        // Animation frames
+        const frames = ['OOO', 'O O', '| |', '0 0', 'OOO'];
+        let frameIndex = 0;
+        
+        // Start animation
+        cell.style.textAlign = 'center';
+        cell.style.fontFamily = 'monospace';
+        cell.style.fontSize = '1.2em';
+        cell.style.fontWeight = 'bold';
+        cell.style.color = 'var(--accent-primary)';
+        
+        const animationInterval = setInterval(() => {
+            cell.textContent = frames[frameIndex];
+            frameIndex = (frameIndex + 1) % frames.length;
+        }, 200);
+        
+        try {
+            // Fetch the price
+            const formData = new FormData();
+            formData.append('symbol', symbol);
+            formData.append('date', date);
+            
+            const response = await fetch('/journal/fetch-price', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const data = await response.json();
+            
+            if (!response.ok) {
+                throw new Error(data.detail || 'Failed to fetch price');
+            }
+            
+            // Stop animation
+            clearInterval(animationInterval);
+            
+            // Update the cell value in the database
+            const updateFormData = new FormData();
+            updateFormData.append('date', date);
+            updateFormData.append('symbol', symbol);
+            updateFormData.append('value', data.price.toFixed(2));
+            
+            const updateResponse = await fetch('/journal/update-cell', {
+                method: 'POST',
+                body: updateFormData
+            });
+            
+            if (!updateResponse.ok) {
+                throw new Error('Failed to update cell value');
+            }
+            
+            // Show success animation
+            cell.textContent = '✓';
+            cell.style.color = 'var(--success-bg)';
+            
+            setTimeout(() => {
+                // Update cell with new value
+                const formattedValue = `$${Math.ceil(data.price).toLocaleString('en-US')}`;
+                cell.innerHTML = formattedValue;
+                cell.setAttribute('data-value', data.price.toFixed(2));
+                cell.setAttribute('data-raw-value', data.price);
+                
+                // Reset styles
+                cell.style.textAlign = 'right';
+                cell.style.fontFamily = '';
+                cell.style.fontSize = '';
+                cell.style.fontWeight = '';
+                cell.style.color = '';
+                
+                // Brief highlight to show update
+                cell.style.backgroundColor = 'var(--accent-primary)';
+                cell.style.transition = 'background-color 1s';
+                
+                setTimeout(() => {
+                    cell.style.backgroundColor = '';
+                }, 1000);
+            }, 800);
+            
+        } catch (error) {
+            console.error('Error fetching price:', error);
+            
+            // Stop animation
+            clearInterval(animationInterval);
+            
+            // Show error
+            cell.textContent = '✗';
+            cell.style.color = 'var(--error-bg)';
+            
+            setTimeout(() => {
+                // Restore original content
+                cell.innerHTML = originalContent;
+                cell.setAttribute('data-value', originalValue);
+                
+                // Reset styles
+                cell.style.textAlign = 'right';
+                cell.style.fontFamily = '';
+                cell.style.fontSize = '';
+                cell.style.fontWeight = '';
+                cell.style.color = '';
+            }, 1500);
+            
+            // Show error message
+            alert(`Failed to fetch price: ${error.message}`);
+        }
     }
 
     let draggedElement = null;

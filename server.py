@@ -1087,13 +1087,15 @@ async def export_journal():
         csv_content = db.export_journal_to_csv()
         
         # Generate filename with current date
-        from datetime import datetime
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"journal_export_{timestamp}.csv"
         
+        # Convert string to bytes for proper streaming
+        csv_bytes = csv_content.encode('utf-8')
+        
         # Return CSV as downloadable file
         return StreamingResponse(
-            iter([csv_content]),
+            io.BytesIO(csv_bytes),
             media_type="text/csv",
             headers={
                 "Content-Disposition": f"attachment; filename={filename}"
