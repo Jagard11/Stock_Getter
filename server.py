@@ -1105,6 +1105,222 @@ async def export_journal():
         raise HTTPException(status_code=500, detail=f"Error exporting journal: {str(e)}")
 
 
+@app.get("/dividend-payments", response_class=HTMLResponse)
+async def dividend_payments(request: Request):
+    """Dividend Payments tracking page."""
+    config = load_config()
+    current_theme = db.get_setting('theme', 'default')
+    
+    # Get tracking symbols and dividend summary
+    summary_data = db.get_dividend_summary()
+    
+    # Get all payments organized by symbol
+    all_payments = db.get_dividend_payments()
+    
+    # Organize payments by symbol
+    payments_by_symbol = {}
+    for payment in all_payments:
+        symbol = payment['symbol']
+        if symbol not in payments_by_symbol:
+            payments_by_symbol[symbol] = []
+        payments_by_symbol[symbol].append(payment)
+    
+    return templates.TemplateResponse(
+        "dividend_payments.html",
+        {
+            "request": request,
+            "config": config,
+            "current_theme": current_theme,
+            "summary_data": summary_data,
+            "payments_by_symbol": payments_by_symbol
+        }
+    )
+
+
+@app.post("/dividend-payments/tracking/add")
+async def add_dividend_tracking(
+    symbol: str = Form(...),
+    initial_cost: float = Form(...),
+    shares_purchased: Optional[str] = Form(None),
+    purchase_date: Optional[str] = Form(None),
+    account_number: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None)
+):
+    """Add a new symbol to dividend tracking."""
+    try:
+        # Convert empty strings to None and parse numbers
+        shares = None
+        if shares_purchased and shares_purchased.strip():
+            shares = float(shares_purchased)
+        
+        # Clean up optional string fields
+        purchase_date_clean = purchase_date if purchase_date and purchase_date.strip() else None
+        account_clean = account_number if account_number and account_number.strip() else None
+        notes_clean = notes if notes and notes.strip() else None
+        
+        db.add_dividend_tracking(
+            symbol=symbol.upper(),
+            initial_cost=initial_cost,
+            shares_purchased=shares,
+            purchase_date=purchase_date_clean,
+            account_number=account_clean,
+            notes=notes_clean
+        )
+        return RedirectResponse(
+            url="/dividend-payments?tracking_added=1",
+            status_code=303
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error adding tracking: {str(e)}")
+
+
+@app.post("/dividend-payments/tracking/{tracking_id}/update")
+async def update_dividend_tracking_route(
+    tracking_id: int,
+    initial_cost: float = Form(...),
+    shares_purchased: Optional[str] = Form(None),
+    purchase_date: Optional[str] = Form(None),
+    account_number: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None)
+):
+    """Update dividend tracking entry."""
+    try:
+        # Convert empty strings to None and parse numbers
+        shares = None
+        if shares_purchased and shares_purchased.strip():
+            shares = float(shares_purchased)
+        
+        # Clean up optional string fields
+        purchase_date_clean = purchase_date if purchase_date and purchase_date.strip() else None
+        account_clean = account_number if account_number and account_number.strip() else None
+        notes_clean = notes if notes and notes.strip() else None
+        
+        success = db.update_dividend_tracking(
+            tracking_id=tracking_id,
+            initial_cost=initial_cost,
+            shares_purchased=shares,
+            purchase_date=purchase_date_clean,
+            account_number=account_clean,
+            notes=notes_clean
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Tracking entry not found")
+        return RedirectResponse(
+            url="/dividend-payments?tracking_updated=1",
+            status_code=303
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error updating tracking: {str(e)}")
+
+
+@app.delete("/dividend-payments/tracking/{tracking_id}")
+async def delete_dividend_tracking_route(tracking_id: int):
+    """Delete dividend tracking entry."""
+    success = db.delete_dividend_tracking(tracking_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Tracking entry not found")
+    return {"success": True}
+
+
+@app.post("/dividend-payments/payment/add")
+async def add_dividend_payment_route(
+    symbol: str = Form(...),
+    payment_date: str = Form(...),
+    amount_paid: float = Form(...),
+    shares_held: Optional[str] = Form(None),
+    dividend_per_share: Optional[str] = Form(None),
+    account_number: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None)
+):
+    """Add a new dividend payment."""
+    try:
+        # Convert empty strings to None and parse numbers
+        shares = None
+        if shares_held and shares_held.strip():
+            shares = float(shares_held)
+        
+        div_per_share = None
+        if dividend_per_share and dividend_per_share.strip():
+            div_per_share = float(dividend_per_share)
+        
+        # Clean up optional string fields
+        account_clean = account_number if account_number and account_number.strip() else None
+        notes_clean = notes if notes and notes.strip() else None
+        
+        db.add_dividend_payment(
+            symbol=symbol.upper(),
+            payment_date=payment_date,
+            amount_paid=amount_paid,
+            shares_held=shares,
+            dividend_per_share=div_per_share,
+            account_number=account_clean,
+            notes=notes_clean
+        )
+        return RedirectResponse(
+            url="/dividend-payments?payment_added=1",
+            status_code=303
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error adding payment: {str(e)}")
+
+
+@app.post("/dividend-payments/payment/{payment_id}/update")
+async def update_dividend_payment_route(
+    payment_id: int,
+    payment_date: str = Form(...),
+    amount_paid: float = Form(...),
+    shares_held: Optional[str] = Form(None),
+    dividend_per_share: Optional[str] = Form(None),
+    account_number: Optional[str] = Form(None),
+    notes: Optional[str] = Form(None)
+):
+    """Update a dividend payment."""
+    try:
+        # Convert empty strings to None and parse numbers
+        shares = None
+        if shares_held and shares_held.strip():
+            shares = float(shares_held)
+        
+        div_per_share = None
+        if dividend_per_share and dividend_per_share.strip():
+            div_per_share = float(dividend_per_share)
+        
+        # Clean up optional string fields
+        account_clean = account_number if account_number and account_number.strip() else None
+        notes_clean = notes if notes and notes.strip() else None
+        
+        success = db.update_dividend_payment(
+            payment_id=payment_id,
+            payment_date=payment_date,
+            amount_paid=amount_paid,
+            shares_held=shares,
+            dividend_per_share=div_per_share,
+            account_number=account_clean,
+            notes=notes_clean
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Payment not found")
+        return RedirectResponse(
+            url="/dividend-payments?payment_updated=1",
+            status_code=303
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error updating payment: {str(e)}")
+
+
+@app.delete("/dividend-payments/payment/{payment_id}")
+async def delete_dividend_payment_route(payment_id: int):
+    """Delete a dividend payment."""
+    success = db.delete_dividend_payment(payment_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    return {"success": True}
+
+
 @app.post("/import-rules/backfill")
 async def backfill_historical_data(
     symbol: str = Form(...),

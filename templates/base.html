@@ -737,6 +737,7 @@
                     <a href="/">Home</a>
                     <a href="/journal">Journal</a>
                     <a href="/daily-charts">Charts</a>
+                    <a href="/dividend-payments">Dividends</a>
                     <a href="/import-rules">Import Rules</a>
                     <a href="/settings">Settings</a>
                 </nav>
@@ -825,6 +826,20 @@
             }
             if (urlParams.has('holdings_imported')) {
                 showToast('✓ Imported ' + urlParams.get('holdings_imported') + ' symbols!', 'success');
+            }
+            
+            // Dividend tracking messages
+            if (urlParams.has('tracking_added')) {
+                showToast('✓ Symbol added to dividend tracking!', 'success');
+            }
+            if (urlParams.has('tracking_updated')) {
+                showToast('✓ Tracking information updated!', 'success');
+            }
+            if (urlParams.has('payment_added')) {
+                showToast('✓ Dividend payment recorded!', 'success');
+            }
+            if (urlParams.has('payment_updated')) {
+                showToast('✓ Payment information updated!', 'success');
             }
             
             // Error messages

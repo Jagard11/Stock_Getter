@@ -1689,6 +1689,217 @@ class Database:
         
         return [dict(row) for row in rows]
     
+    # ========== Dividend Tracking Methods ==========
+    
+    def get_dividend_tracking_symbols(self) -> List[Dict[str, Any]]:
+        """Get all symbols being tracked for dividend yield calculations."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT * FROM dividend_tracking
+            ORDER BY symbol
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def add_dividend_tracking(
+        self,
+        symbol: str,
+        initial_cost: float,
+        shares_purchased: Optional[float] = None,
+        purchase_date: Optional[str] = None,
+        account_number: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> int:
+        """Add a new symbol to dividend tracking."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO dividend_tracking 
+            (symbol, initial_cost, shares_purchased, purchase_date, account_number, notes, created_at, modified_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, initial_cost, shares_purchased, purchase_date, account_number, notes, now, now))
+        
+        tracking_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return tracking_id
+    
+    def update_dividend_tracking(
+        self,
+        tracking_id: int,
+        initial_cost: float,
+        shares_purchased: Optional[float] = None,
+        purchase_date: Optional[str] = None,
+        account_number: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> bool:
+        """Update an existing dividend tracking entry."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            UPDATE dividend_tracking
+            SET initial_cost = ?, shares_purchased = ?, purchase_date = ?, 
+                account_number = ?, notes = ?, modified_at = ?
+            WHERE id = ?
+        """, (initial_cost, shares_purchased, purchase_date, account_number, notes, now, tracking_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def delete_dividend_tracking(self, tracking_id: int) -> bool:
+        """Delete a dividend tracking entry."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM dividend_tracking WHERE id = ?", (tracking_id,))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def get_dividend_payments(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Get all dividend payments, optionally filtered by symbol."""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        if symbol:
+            cursor.execute("""
+                SELECT * FROM dividend_payments
+                WHERE symbol = ?
+                ORDER BY payment_date DESC
+            """, (symbol,))
+        else:
+            cursor.execute("""
+                SELECT * FROM dividend_payments
+                ORDER BY symbol, payment_date DESC
+            """)
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
+    def add_dividend_payment(
+        self,
+        symbol: str,
+        payment_date: str,
+        amount_paid: float,
+        shares_held: Optional[float] = None,
+        dividend_per_share: Optional[float] = None,
+        account_number: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> int:
+        """Add a new dividend payment record."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        now = datetime.now().isoformat()
+        cursor.execute("""
+            INSERT INTO dividend_payments 
+            (symbol, payment_date, amount_paid, shares_held, dividend_per_share, 
+             account_number, notes, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (symbol, payment_date, amount_paid, shares_held, dividend_per_share, 
+              account_number, notes, now))
+        
+        payment_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return payment_id
+    
+    def update_dividend_payment(
+        self,
+        payment_id: int,
+        payment_date: str,
+        amount_paid: float,
+        shares_held: Optional[float] = None,
+        dividend_per_share: Optional[float] = None,
+        account_number: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> bool:
+        """Update an existing dividend payment."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            UPDATE dividend_payments
+            SET payment_date = ?, amount_paid = ?, shares_held = ?, 
+                dividend_per_share = ?, account_number = ?, notes = ?
+            WHERE id = ?
+        """, (payment_date, amount_paid, shares_held, dividend_per_share, 
+              account_number, notes, payment_id))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def delete_dividend_payment(self, payment_id: int) -> bool:
+        """Delete a dividend payment."""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("DELETE FROM dividend_payments WHERE id = ?", (payment_id,))
+        
+        success = cursor.rowcount > 0
+        conn.commit()
+        conn.close()
+        
+        return success
+    
+    def get_dividend_summary(self) -> List[Dict[str, Any]]:
+        """Get dividend summary data for all tracked symbols.
+        
+        Calculates total payments and yield based on initial investment.
+        """
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            SELECT 
+                dt.symbol,
+                dt.initial_cost,
+                dt.shares_purchased,
+                dt.purchase_date,
+                dt.account_number,
+                COALESCE(SUM(dp.amount_paid), 0) as total_payments,
+                COUNT(dp.id) as payment_count,
+                CASE 
+                    WHEN dt.initial_cost > 0 
+                    THEN (COALESCE(SUM(dp.amount_paid), 0) / dt.initial_cost) * 100
+                    ELSE 0
+                END as yield_percentage
+            FROM dividend_tracking dt
+            LEFT JOIN dividend_payments dp ON dt.symbol = dp.symbol
+            GROUP BY dt.symbol, dt.initial_cost, dt.shares_purchased, 
+                     dt.purchase_date, dt.account_number
+            ORDER BY dt.symbol
+        """)
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+    
     def export_journal_to_csv(self) -> str:
         """Export portfolio journal data to CSV format.
         
