@@ -1079,6 +1079,30 @@ async def add_retroactive_date(date: str = Form(...), background_tasks: Backgrou
         raise HTTPException(status_code=500, detail=f"Error adding retroactive date: {str(e)}")
 
 
+@app.get("/journal/export")
+async def export_journal():
+    """Export journal data to CSV file."""
+    try:
+        # Get CSV content from database
+        csv_content = db.export_journal_to_csv()
+        
+        # Generate filename with current date
+        from datetime import datetime
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"journal_export_{timestamp}.csv"
+        
+        # Return CSV as downloadable file
+        return StreamingResponse(
+            iter([csv_content]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error exporting journal: {str(e)}")
+
+
 @app.post("/import-rules/backfill")
 async def backfill_historical_data(
     symbol: str = Form(...),

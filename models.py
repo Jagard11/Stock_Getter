@@ -1688,6 +1688,44 @@ class Database:
         conn.close()
         
         return [dict(row) for row in rows]
+    
+    def export_journal_to_csv(self) -> str:
+        """Export portfolio journal data to CSV format.
+        
+        Returns CSV string with Date column followed by all symbol columns,
+        maintaining the same format as the import to enable backup restoration.
+        
+        Returns:
+            CSV formatted string
+        """
+        import io
+        import csv
+        
+        # Get portfolio data
+        data_rows, symbols = self.get_portfolio_data()
+        
+        # Create CSV in memory
+        output = io.StringIO()
+        writer = csv.writer(output)
+        
+        # Write header row
+        header = ['Date'] + symbols
+        writer.writerow(header)
+        
+        # Write data rows
+        for row in data_rows:
+            csv_row = [row['date']]
+            for symbol in symbols:
+                value = row.get(symbol)
+                # Write empty string for None values, otherwise write the value
+                csv_row.append('' if value is None else value)
+            writer.writerow(csv_row)
+        
+        # Get CSV content
+        csv_content = output.getvalue()
+        output.close()
+        
+        return csv_content
 
 
 def fetch_yahoo_price(symbol: str, date_str: str, db_instance: 'Database') -> Optional[Dict[str, Any]]:
