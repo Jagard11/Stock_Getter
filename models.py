@@ -1262,7 +1262,7 @@ class Database:
             difference = current_value - max_value
             percent_diff = 0
             if max_value > 0:
-                percent_diff = (1 - (max_value - current_value) / max_value) * 100
+                percent_diff = (difference / max_value) * 100
             
             return {
                 'max': float(max_value),

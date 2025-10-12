@@ -216,7 +216,7 @@
                 <td style="color: var(--accent-primary);">${{ "{:,.0f}".format(ath_stats.max) }}</td>
                 <td style="color: var(--text-primary);">${{ "{:,.0f}".format(ath_stats.current) }}</td>
                 <td style="color: {% if ath_stats.difference >= 0 %}var(--success-bg){% else %}var(--error-bg){% endif %};">${{ "{:,.0f}".format(ath_stats.difference) }}</td>
-                <td style="color: {% if ath_stats.percent_diff >= 100 %}var(--success-bg){% else %}var(--warning-bg){% endif %};">{{ "{:.2f}".format(ath_stats.percent_diff) }}%</td>
+                <td style="color: {% if ath_stats.percent_diff >= 0 %}var(--success-bg){% else %}var(--warning-bg){% endif %};">{{ "{:.2f}".format(ath_stats.percent_diff) }}%</td>
             </tr>
         </tbody>
     </table>

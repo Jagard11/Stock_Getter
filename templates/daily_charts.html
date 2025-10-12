@@ -190,7 +190,7 @@
                         <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: var(--accent-primary);">${{ "{:,.0f}".format(ath_stats.max) }}</td>
                         <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: var(--text-primary);">${{ "{:,.0f}".format(ath_stats.current) }}</td>
                         <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: {% if ath_stats.difference >= 0 %}var(--success-bg){% else %}var(--error-bg){% endif %};">${{ "{:,.0f}".format(ath_stats.difference) }}</td>
-                        <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: {% if ath_stats.percent_diff >= 100 %}var(--success-bg){% else %}var(--warning-bg){% endif %};">{{ "{:.2f}".format(ath_stats.percent_diff) }}%</td>
+                        <td style="text-align: center; padding: 20px; font-size: 1.3em; font-weight: 700; color: {% if ath_stats.percent_diff >= 0 %}var(--success-bg){% else %}var(--warning-bg){% endif %};">{{ "{:.2f}".format(ath_stats.percent_diff) }}%</td>
                     </tr>
                 </tbody>
             </table>
