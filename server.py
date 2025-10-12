@@ -699,7 +699,7 @@ async def import_journal_csv(file: UploadFile = File(...)):
 
 
 @app.post("/journal/import-holdings")
-async def import_holdings_csv(file: UploadFile = File(...)):
+async def import_holdings_csv(request: Request, file: UploadFile = File(...)):
     """Import stock holdings from account-based CSV file."""
     try:
         # Read CSV file
@@ -737,8 +737,12 @@ async def import_holdings_csv(file: UploadFile = File(...)):
         if result.get('warnings'):
             warning_param = f"&warnings={len(result['warnings'])}"
         
+        # Determine where to redirect based on the referer header
+        referer = request.headers.get('referer', '')
+        redirect_to = '/journal' if '/journal' in referer else '/settings'
+        
         return RedirectResponse(
-            url=f"/settings?holdings_imported={result['symbols_imported']}{detail}&date={result['date']}{warning_param}",
+            url=f"{redirect_to}?holdings_imported={result['symbols_imported']}{detail}&date={result['date']}{warning_param}",
             status_code=303
         )
     except HTTPException:
