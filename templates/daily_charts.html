@@ -363,6 +363,7 @@ document.addEventListener('DOMContentLoaded', function() {
                             wheel: {
                                 enabled: true,
                                 speed: 0.1,
+                                modifierKey: 'shift',
                             },
                             pinch: {
                                 enabled: true
@@ -453,7 +454,7 @@ document.addEventListener('DOMContentLoaded', function() {
         instructions.className = 'alert-info';
         instructions.style.marginTop = '30px';
         instructions.style.padding = '20px';
-        instructions.innerHTML = '<p style="margin: 0; font-weight: 700; font-size: 1.2em; color: var(--btn-text);">💡 Tip: Use mouse wheel to zoom in/out. Hold Shift + drag to box zoom. Double-click to reset zoom.</p>';
+        instructions.innerHTML = '<p style="margin: 0; font-weight: 700; font-size: 1.2em; color: var(--btn-text);">💡 Tip: Hold Shift + mouse wheel to zoom in/out. Hold Shift + drag to box zoom. Double-click to reset zoom.</p>';
         container.appendChild(instructions);
     }
 });
