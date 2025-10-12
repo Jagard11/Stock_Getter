@@ -17,7 +17,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from models import Database, load_config, save_config, fetch_yahoo_price
+from models import Database, load_config, save_config, fetch_yahoo_price, fetch_company_name
 
 
 app = FastAPI(title="Inspector - Bug Tracking System")
@@ -423,6 +423,29 @@ async def daily_charts(request: Request):
     # Get chart data from database
     chart_data = db.get_chart_data()
     
+    # Enrich chart data with company names and daily changes
+    enriched_chart_data = {}
+    for symbol, data in chart_data.items():
+        # Fetch company name for this symbol
+        company_name = fetch_company_name(symbol, db)
+        
+        # Calculate daily change (last two data points)
+        daily_change = None
+        daily_percent = None
+        if data and len(data) >= 2:
+            prev_value = data[-2]['value']
+            curr_value = data[-1]['value']
+            daily_change = curr_value - prev_value
+            if prev_value != 0:
+                daily_percent = (daily_change / prev_value) * 100
+        
+        enriched_chart_data[symbol] = {
+            'data': data,
+            'company_name': company_name,
+            'daily_change': daily_change,
+            'daily_percent': daily_percent
+        }
+    
     # Get all-time high statistics
     ath_stats = db.get_all_time_high_stats()
     
@@ -431,7 +454,7 @@ async def daily_charts(request: Request):
         {
             "request": request,
             "config": config,
-            "chart_data": chart_data,
+            "chart_data": enriched_chart_data,
             "ath_stats": ath_stats,
             "current_theme": current_theme
         }

@@ -2112,6 +2112,39 @@ class Database:
         return csv_content
 
 
+def fetch_company_name(symbol: str, db_instance: 'Database') -> Optional[str]:
+    """Fetch company name from Yahoo Finance for a given symbol.
+    
+    Args:
+        symbol: The symbol to fetch (journal symbol, will be mapped if needed)
+        db_instance: Database instance for looking up symbol mappings
+    
+    Returns:
+        Company name string on success, None on failure
+    """
+    if yf is None:
+        return None
+    
+    try:
+        # Check for symbol mapping in database
+        yahoo_symbol = db_instance.get_symbol_mapping(symbol)
+        if not yahoo_symbol:
+            yahoo_symbol = symbol  # No mapping, use symbol as-is
+        
+        # Fetch company info from Yahoo Finance
+        ticker = yf.Ticker(yahoo_symbol)
+        info = ticker.info
+        
+        # Try to get the long name, fall back to short name if not available
+        company_name = info.get('longName') or info.get('shortName')
+        
+        return company_name
+        
+    except Exception as e:
+        print(f"  ERROR fetching company name for {symbol}: {type(e).__name__}: {e}")
+        return None
+
+
 def fetch_yahoo_price(symbol: str, date_str: str, db_instance: 'Database') -> Optional[Dict[str, Any]]:
     """Fetch stock price from Yahoo Finance for a given symbol and date.
     

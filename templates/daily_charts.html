@@ -130,24 +130,36 @@
     <h2 style="margin-bottom: 30px; font-size: 2.2em; font-weight: 700;">Daily Stock Charts</h2>
     
     {% if chart_data %}
-        {% for symbol, data in chart_data.items() %}
+        {% for symbol, chart_info in chart_data.items() %}
+        {% set data = chart_info.data %}
         <div class="chart-wrapper">
             <div class="chart-header">
-                <h3>{{ symbol }}</h3>
-                <div class="chart-info">
+                <h3>
+                    {% if chart_info.company_name %}
+                        {{ chart_info.company_name }} ({{ symbol }})
+                    {% else %}
+                        {{ symbol }}
+                    {% endif %}
                     {% if data and data|length > 0 %}
                     {% set initial_value = data[0].value %}
                     {% set current_value = data[-1].value %}
-                    {% set gain_loss = current_value - initial_value %}
-                    {% set percent_change = ((current_value - initial_value) / initial_value * 100) if initial_value != 0 else 0 %}
-                    <span style="{% if gain_loss >= 0 %}color: var(--success-bg);{% else %}color: var(--error-bg);{% endif %} font-weight: 700;">
-                        {% if gain_loss >= 0 %}+{% endif %}${{ "{:,.2f}".format(gain_loss) }}
-                        ({% if percent_change >= 0 %}+{% endif %}{{ "{:.2f}".format(percent_change) }}%)
+                    {% set overall_gain_loss = current_value - initial_value %}
+                    {% set overall_percent = ((current_value - initial_value) / initial_value * 100) if initial_value != 0 else 0 %}
+                    <span style="margin-left: 20px; font-size: 0.7em; font-weight: 600;">
+                        {% if chart_info.daily_change is not none %}
+                        <span style="{% if chart_info.daily_change >= 0 %}color: var(--success-bg);{% else %}color: var(--error-bg);{% endif %}">
+                            Daily {% if chart_info.daily_change >= 0 %}+{% endif %}${{ "{:,.2f}".format(chart_info.daily_change) }}({% if chart_info.daily_percent >= 0 %}+{% endif %}{{ "{:.2f}".format(chart_info.daily_percent) }}%)
+                        </span>
+                        {% endif %}
+                        <span style="margin-left: 20px; {% if overall_gain_loss >= 0 %}color: var(--success-bg);{% else %}color: var(--error-bg);{% endif %}">
+                            Overall {% if overall_gain_loss >= 0 %}+{% endif %}${{ "{:,.2f}".format(overall_gain_loss) }} ({% if overall_percent >= 0 %}+{% endif %}{{ "{:.2f}".format(overall_percent) }}%)
+                        </span>
                     </span>
-                    <span style="margin-left: 20px;">•</span>
                     {% endif %}
-                    <span style="margin-left: 10px;">Data points: {{ data|length }}</span>
+                </h3>
+                <div class="chart-info">
                     {% if data %}
+                    <span>Data points: {{ data|length }}</span>
                     <span style="margin-left: 20px;">
                         {{ data[0].date }} to {{ data[-1].date }}
                     </span>
@@ -233,7 +245,8 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Create charts for each symbol
     Object.keys(chartData).forEach(symbol => {
-        const data = chartData[symbol];
+        const chartInfo = chartData[symbol];
+        const data = chartInfo.data;
         const canvasId = 'chart-' + symbol.replace(/\./g, '-').replace(/\s/g, '-');
         const canvas = document.getElementById(canvasId);
         
@@ -252,13 +265,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const movingAvg = calculateMovingAverage(data, 50);
         
         // Create chart
+        const displayName = chartInfo.company_name ? chartInfo.company_name + ' (' + symbol + ')' : symbol;
         const chart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: dates,
                 datasets: [
                     {
-                        label: symbol + ' Price',
+                        label: displayName + ' Price',
                         data: values,
                         borderColor: primaryColor,
                         backgroundColor: primaryColor + '20',
